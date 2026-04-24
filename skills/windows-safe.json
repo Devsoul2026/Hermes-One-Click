@@ -1,0 +1,166 @@
+{
+  "version": 1,
+  "description": "Conservative default skill allowlist for Windows desktop/Web UI environments. Skills not listed here remain installable, but are hidden from automatic model selection while Windows safe mode is enabled.",
+  "skills": [
+    {
+      "name": "plan",
+      "category": "software-development",
+      "reason": "Planning workflow that writes workspace-relative markdown plans and does not depend on platform-specific shell commands."
+    },
+    {
+      "name": "writing-plans",
+      "category": "software-development",
+      "reason": "Implementation planning guidance; no operating-system-specific commands."
+    },
+    {
+      "name": "requesting-code-review",
+      "category": "software-development",
+      "reason": "Code review workflow guidance that is independent of the host OS."
+    },
+    {
+      "name": "test-driven-development",
+      "category": "software-development",
+      "reason": "TDD workflow guidance that adapts to the repository's own test commands."
+    },
+    {
+      "name": "systematic-debugging",
+      "category": "software-development",
+      "reason": "Debugging method guidance that is independent of Unix-only tooling."
+    },
+    {
+      "name": "subagent-driven-development",
+      "category": "software-development",
+      "reason": "Agent workflow guidance that does not require Linux/macOS commands."
+    },
+    {
+      "name": "hermes-agent",
+      "category": "autonomous-ai-agents",
+      "reason": "Core Hermes product setup and troubleshooting reference; useful in the Windows desktop app despite some optional Unix examples."
+    },
+    {
+      "name": "native-mcp",
+      "category": "mcp",
+      "reason": "Hermes native MCP usage guidance with weak OS coupling."
+    },
+    {
+      "name": "github-auth",
+      "category": "github",
+      "reason": "GitHub authentication flow based on git/gh, both supported on Windows."
+    },
+    {
+      "name": "github-issues",
+      "category": "github",
+      "reason": "GitHub issue workflow using API/gh concepts that are available on Windows."
+    },
+    {
+      "name": "github-repo-management",
+      "category": "github",
+      "reason": "Repository management workflow using git/gh, both supported on Windows."
+    },
+    {
+      "name": "github-pr-workflow",
+      "category": "github",
+      "reason": "Pull request workflow using git/gh, both supported on Windows."
+    },
+    {
+      "name": "github-code-review",
+      "category": "github",
+      "reason": "Pull request review workflow; any shell helper is optional and can be replaced by gh/git calls."
+    },
+    {
+      "name": "codebase-inspection",
+      "category": "github",
+      "reason": "Codebase inspection guidance using Python ecosystem tools."
+    },
+    {
+      "name": "arxiv",
+      "category": "research",
+      "reason": "Uses arXiv web/API workflows rather than platform-specific local services."
+    },
+    {
+      "name": "duckduckgo-search",
+      "category": "research",
+      "reason": "Privacy-friendly web search workflow; preinstalled skill guidance uses built-in web search first and treats ddgr CLI as optional."
+    },
+    {
+      "name": "polymarket",
+      "category": "research",
+      "reason": "Uses public web/API workflows rather than platform-specific commands."
+    },
+    {
+      "name": "dogfood",
+      "category": "dogfood",
+      "reason": "Web application QA workflow that is browser-oriented and OS-neutral."
+    },
+    {
+      "name": "find-nearby",
+      "category": "leisure",
+      "reason": "OpenStreetMap/web lookup workflow with no Unix-only dependency."
+    },
+    {
+      "name": "ideation",
+      "category": "creative",
+      "reason": "Creative ideation workflow with no command-line dependency."
+    },
+    {
+      "name": "excalidraw",
+      "category": "creative",
+      "reason": "Generates Excalidraw JSON for browser-based editing."
+    },
+    {
+      "name": "architecture-diagram",
+      "category": "creative",
+      "reason": "Diagram generation guidance using portable static assets."
+    },
+    {
+      "name": "baoyu-infographic",
+      "category": "creative",
+      "reason": "Infographic design guidance that does not require Unix package managers."
+    },
+    {
+      "name": "popular-web-designs",
+      "category": "creative",
+      "reason": "Web UI design reference material suitable for the Windows Web UI product."
+    },
+    {
+      "name": "songwriting-and-ai-music",
+      "category": "creative",
+      "reason": "Prompting and writing guidance with no platform-specific runtime."
+    },
+    {
+      "name": "linear",
+      "category": "productivity",
+      "reason": "Linear API workflow; requires credentials but not Unix-only tooling."
+    },
+    {
+      "name": "notion",
+      "category": "productivity",
+      "reason": "Notion API workflow; requires credentials but not Unix-only tooling."
+    },
+    {
+      "name": "youtube-content",
+      "category": "media",
+      "reason": "Content workflow based on Python/web APIs, suitable for Windows with dependencies installed."
+    },
+    {
+      "name": "gif-search",
+      "category": "media",
+      "reason": "Tenor/API workflow; optional command-line parsing tools can be replaced on Windows."
+    },
+    {
+      "name": "ocr-and-documents",
+      "category": "productivity",
+      "reason": "Document/OCR workflow based mainly on Python packages and optional web extraction."
+    },
+    {
+      "name": "powerpoint",
+      "category": "productivity",
+      "reason": "Office document workflow implemented with Python tooling and bundled schemas."
+    },
+    {
+      "name": "llm-wiki",
+      "category": "research",
+      "reason": "Markdown knowledge-base workflow; Linux service examples are optional."
+    }
+  ]
+}
