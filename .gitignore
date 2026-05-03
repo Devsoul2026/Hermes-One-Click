@@ -1,0 +1,50 @@
+# Build outputs
+_staging/
+_dist/
+build-output/
+dist/
+out/
+*.exe
+*.msix
+*.msi
+*.zip
+*.cab
+*.tar.gz
+
+# Downloaded runtimes and local tool cache
+vendor/
+
+# JavaScript / Node
+node_modules/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+
+# Python
+.venv/
+venv/
+env/
+__pycache__/
+*.py[cod]
+*$py.class
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+
+# Local app state and secrets
+.env
+.env.*
+!.env.example
+*.log
+logs/
+
+# IDE / editor
+.idea/
+.vscode/
+.cursor/
+
+# OS files
+.DS_Store
+Thumbs.db
+desktop.ini

@@ -1,0 +1,5 @@
+# Hermes Web UI -- minimal Python dependencies
+# The server uses stdlib + pyyaml; optional qrcode for Weixin iLink SVG QR in the UI.
+# All heavy ML/agent deps live in the Hermes agent venv.
+pyyaml>=6.0
+qrcode>=7.4

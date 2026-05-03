@@ -1,0 +1,57 @@
+name: Windows packaging smoke
+
+on:
+  push:
+    branches: [main, master]
+  pull_request:
+    branches: [main, master]
+
+jobs:
+  verify:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Verify packaging tree
+        shell: pwsh
+        run: |
+          $required = @(
+            'packaging/lock.json',
+            'packaging/windows/hermes-installer.iss',
+            'packaging/windows/hermes-installer-staging.iss',
+            'packaging/windows/launcher/HermesWebUI.cmd',
+            'packaging/windows/launcher/HermesDashboard.cmd',
+            'scripts/Export-PackagingLock.ps1',
+            'scripts/Build-Staging.ps1',
+            'scripts/Dev-LaunchWebUI.ps1',
+            'scripts/Dev-LaunchDashboard.ps1'
+          )
+          foreach ($p in $required) {
+            if (-not (Test-Path $p)) { throw "Missing $p" }
+          }
+          Write-Host "OK: packaging layout present."
+
+      - name: Export packaging lock (requires git checkouts)
+        shell: pwsh
+        run: |
+          if (-not (Test-Path 'hermes-agent/.git')) { Write-Host 'Skip lock export: hermes-agent not a git repo'; exit 0 }
+          if (-not (Test-Path 'hermes-webui/.git')) { Write-Host 'Skip lock export: hermes-webui not a git repo'; exit 0 }
+          pwsh -File scripts/Export-PackagingLock.ps1
+          Get-Content packaging/lock.json
+
+  staging_copy:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Build staging (copy only, no npm / no venv)
+        shell: powershell
+        run: |
+          powershell -ExecutionPolicy Bypass -File scripts/Build-Staging.ps1 -Clean -SkipWebBuild -SkipVenv
+
+      - name: Assert staged agent + webui + launcher
+        shell: powershell
+        run: |
+          if (-not (Test-Path '_staging/Hermes/app/hermes-agent/run_agent.py')) { throw 'missing agent' }
+          if (-not (Test-Path '_staging/Hermes/app/hermes-webui/server.py')) { throw 'missing webui' }
+          if (-not (Test-Path '_staging/Hermes/launcher/HermesWebUI.cmd')) { throw 'missing launcher' }
