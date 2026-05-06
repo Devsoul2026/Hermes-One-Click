@@ -907,6 +907,8 @@ document.addEventListener('click',e=>{
   ) closeModelDropdown();
 });
 window.addEventListener('resize',()=>{
+  if(window._resizeLast&&Date.now()-window._resizeLast<60) return;
+  window._resizeLast=Date.now();
   const dd=$('composerModelDropdown');
   if(dd&&dd.classList.contains('open')) _positionModelDropdown();
   // Keep the reasoning dropdown aligned under its chip when the window
@@ -1207,6 +1209,8 @@ document.addEventListener('click', function(e) {
 // was open — the wrap is hidden by CSS but the dropdown sibling stays open
 // without an anchor). (#1431)
 window.addEventListener('resize', () => {
+  if(window._resizeLast&&Date.now()-window._resizeLast<60) return;
+  window._resizeLast=Date.now();
   const dd = $('composerToolsetsDropdown');
   if (!dd || !dd.classList.contains('open')) return;
   const chip = $('composerToolsetsChip');
@@ -1271,6 +1275,8 @@ document.addEventListener('keydown',function(e){
 });
 
 window.addEventListener('resize',function(){
+  if(window._resizeLast&&Date.now()-window._resizeLast<60) return;
+  window._resizeLast=Date.now();
   if(window.matchMedia && !window.matchMedia('(max-width: 640px)').matches){
     closeMobileComposerConfig();
     closeModelDropdown();

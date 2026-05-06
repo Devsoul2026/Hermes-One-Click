@@ -1329,6 +1329,15 @@ function transcript(){
 
 function autoResize(){const el=$('msg');el.style.height='auto';el.style.height=Math.min(el.scrollHeight,200)+'px';updateSendBtn();}
 
+let _inputRaf=null;
+function handleComposerInput(){
+  if(_inputRaf) cancelAnimationFrame(_inputRaf);
+  _inputRaf=requestAnimationFrame(()=>{
+    _inputRaf=null;
+    autoResize();
+    if(typeof _fallbackSyncSendButton==='function') _fallbackSyncSendButton();
+  });
+}
 
 // ── YOLO mode state ──
 // Session-scoped; stored server-side in memory (tools/approval.py).

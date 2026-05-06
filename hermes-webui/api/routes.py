@@ -789,6 +789,7 @@ from api.workspace import (
     validate_workspace_to_add,
     _is_blocked_system_path,
     _workspace_blocked_roots,
+    list_directory_entries,
 )
 from api.upload import handle_upload, handle_upload_extract, handle_transcribe
 from api.streaming import _sse, _run_agent_streaming, cancel_stream
@@ -1732,6 +1733,11 @@ def handle_get(handler, parsed) -> bool:
             },
         )
 
+    if parsed.path == "/api/dir/list":
+        qs = parse_qs(parsed.query)
+        dir_path = qs.get("path", [""])[0].strip()
+        return j(handler, {"entries": list_directory_entries(dir_path)})
+
     if parsed.path == "/api/sessions/search":
         return _handle_sessions_search(handler, parsed)
 
@@ -2106,6 +2112,58 @@ def handle_post(handler, parsed) -> bool:
         if not result.get("ok"):
             return bad(handler, result.get("error", "Unknown error"))
         return j(handler, result)
+
+    if parsed.path == "/api/models/refresh":
+        provider_id = (body.get("provider") or "").strip().lower()
+        if not provider_id:
+            return bad(handler, "provider is required")
+        try:
+            from api.config import (
+                _resolve_provider_alias, _get_config_path,
+                _load_yaml_config_file, _save_yaml_config_file, reload_config,
+            )
+            provider_id = _resolve_provider_alias(provider_id)
+            # Evict the stale cache entry so the next fetch is always fresh.
+            cache_key = _live_models_cache_key(provider_id)
+            with _LIVE_MODELS_CACHE_LOCK:
+                _LIVE_MODELS_CACHE.pop(cache_key, None)
+            # Fetch a live model list from the provider.
+            ids = []
+            try:
+                import sys as _sys, os as _os
+                _agent_root = _os.path.normpath(
+                    _os.path.join(_os.path.dirname(_os.path.dirname(_os.path.abspath(__file__))),
+                                  "..", "hermes-agent")
+                )
+                if _agent_root not in _sys.path:
+                    _sys.path.insert(0, _agent_root)
+                from hermes_cli.models import provider_model_ids as _pmi
+                ids = _pmi(provider_id) or []
+            except Exception as _fetch_err:
+                logger.debug("models/refresh fetch failed for %s: %s", provider_id, _fetch_err)
+            if ids:
+                # Persist the refreshed list to config.yaml so /api/providers
+                # returns updated models and they survive a restart.
+                try:
+                    _cfg_path = _get_config_path()
+                    _cfg_data = _load_yaml_config_file(_cfg_path)
+                    _providers_cfg = _cfg_data.get("providers", {})
+                    if not isinstance(_providers_cfg, dict):
+                        _providers_cfg = {}
+                    _provider_entry = _providers_cfg.get(provider_id, {})
+                    if not isinstance(_provider_entry, dict):
+                        _provider_entry = {}
+                    _provider_entry["models"] = ids
+                    _providers_cfg[provider_id] = _provider_entry
+                    _cfg_data["providers"] = _providers_cfg
+                    _save_yaml_config_file(_cfg_path, _cfg_data)
+                    reload_config()
+                except Exception as _save_err:
+                    logger.warning("models/refresh: persist failed for %s: %s", provider_id, _save_err)
+                _set_cached_live_models(cache_key, {"provider": provider_id, "models": ids})
+            return j(handler, {"ok": True, "provider": provider_id, "models": ids})
+        except Exception as _e:
+            return bad(handler, str(_e), 500)
 
     if parsed.path == "/api/reasoning":
         # CLI-parity /reasoning handler — writes to the same config.yaml keys

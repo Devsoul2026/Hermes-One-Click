@@ -2165,10 +2165,25 @@ def _run_agent_streaming(
                             or 'invalid_api_key' in _err_lower
                         )
                     )
+                    _is_lmstudio_auth = _is_auth and (
+                        'malformed lm studio api token' in _err_lower
+                        or 'lmstudio.ai/docs/developer/core/authentication' in _err_lower
+                        or ('lm studio' in _err_lower and 'token' in _err_lower)
+                    )
                     if _is_quota:
                         _err_label = 'Out of credits'
                         _err_type = 'quota_exhausted'
                         _err_hint = 'Your provider account is out of credits. Top up your balance or switch providers via `hermes model`.'
+                    elif _is_lmstudio_auth:
+                        _err_label = 'LM Studio authentication required'
+                        _err_type = 'auth_mismatch'
+                        _err_hint = (
+                            'LM Studio has API authentication enabled and rejected the request. '
+                            'Fix either way: '
+                            '① In LM Studio → Developer → API → turn Authentication OFF (recommended for local use), then retry. '
+                            '② Or copy your LM Studio API key and add it to Hermes config: '
+                            'open ~/.hermes/config.yaml → providers → lmstudio → api_key: <your-key>.'
+                        )
                     elif _is_auth:
                         _err_label = 'Authentication failed'
                         _err_type = 'auth_mismatch'
@@ -2501,6 +2516,11 @@ def _run_agent_streaming(
             or 'invalid api key' in _exc_lower
             or 'no cookie auth credentials' in _exc_lower
         )
+        _exc_is_lmstudio_auth = _exc_is_auth and (
+            'malformed lm studio api token' in _exc_lower
+            or 'lmstudio.ai/docs/developer/core/authentication' in _exc_lower
+            or ('lm studio' in _exc_lower and 'token' in _exc_lower)
+        )
         _exc_is_not_found = (
             '404' in err_str
             or 'not found' in _exc_lower
@@ -2520,6 +2540,15 @@ def _run_agent_streaming(
             _exc_label, _exc_type, _exc_hint = (
                 'Rate limit reached', 'rate_limit',
                 'Rate limit reached. The fallback model (if configured) was also exhausted. Try again in a moment.',
+            )
+        elif _exc_is_lmstudio_auth:
+            _exc_label, _exc_type, _exc_hint = (
+                'LM Studio authentication required', 'auth_mismatch',
+                'LM Studio has API authentication enabled and rejected the request. '
+                'Fix either way: '
+                '① In LM Studio → Developer → API → turn Authentication OFF (recommended for local use), then retry. '
+                '② Or copy your LM Studio API key and add it to Hermes config: '
+                'open ~/.hermes/config.yaml → providers → lmstudio → api_key: <your-key>.',
             )
         elif _exc_is_auth:
             _exc_label, _exc_type, _exc_hint = (

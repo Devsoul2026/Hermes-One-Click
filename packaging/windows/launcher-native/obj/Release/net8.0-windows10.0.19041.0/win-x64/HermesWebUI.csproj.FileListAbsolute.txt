@@ -483,3 +483,4 @@ D:\工作区\Hermes One-Click\packaging\windows\launcher-native\obj\Release\net8
 D:\工作区\Hermes One-Click\packaging\windows\launcher-native\obj\Release\net8.0-windows10.0.19041.0\win-x64\HermesWebUI.pdb
 D:\工作区\Hermes One-Click\packaging\windows\launcher-native\obj\Release\net8.0-windows10.0.19041.0\win-x64\HermesWebUI.genruntimeconfig.cache
 D:\工作区\Hermes One-Click\packaging\windows\launcher-native\obj\Release\net8.0-windows10.0.19041.0\win-x64\ref\HermesWebUI.dll
+D:\工作区\Hermes One-Click\packaging\windows\launcher-native\obj\Release\net8.0-windows10.0.19041.0\win-x64\HermesWebUI.sourcelink.json

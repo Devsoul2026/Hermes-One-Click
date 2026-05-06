@@ -404,13 +404,16 @@ function _ensureOnboardingWorkspaceBrowseModal(){
   modal.setAttribute('aria-modal','true');
   modal.innerHTML=`
     <div class="onboarding-ws-browse-dialog" onclick="event.stopPropagation()">
-      <h3 id="onboardingWsBrowseTitle">${esc(t('onboarding_workspace_browse_title'))}</h3>
-      <p class="onboarding-ws-browse-hint" id="onboardingWsBrowseHint">${esc(t('onboarding_workspace_browse_hint'))}</p>
-      <div class="onboarding-ws-browse-toolbar">
-        <code id="onboardingWsBrowseCurrent">—</code>
-        <button type="button" class="sm-btn" id="onboardingWsBrowseUp">${esc(t('onboarding_workspace_browse_up'))}</button>
+      <div class="onboarding-ws-browse-header">
+        <h3 id="onboardingWsBrowseTitle">${esc(t('onboarding_workspace_browse_title'))}</h3>
+        <button type="button" class="onboarding-ws-browse-close" id="onboardingWsBrowseClose" aria-label="${esc(t('cancel'))}">×</button>
       </div>
+      <nav class="onboarding-ws-browse-breadcrumb" id="onboardingWsBrowseBreadcrumb" aria-label="Path"></nav>
       <div class="onboarding-ws-browse-list" id="onboardingWsBrowseList"></div>
+      <div class="onboarding-ws-browse-selected" id="onboardingWsBrowseSelected">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/></svg>
+        <span id="onboardingWsBrowseSelectedPath">—</span>
+      </div>
       <div class="onboarding-ws-browse-actions">
         <button type="button" class="sm-btn" id="onboardingWsBrowseCancel">${esc(t('cancel'))}</button>
         <button type="button" class="sm-btn" id="onboardingWsBrowseUse" style="font-weight:700;color:var(--blue);border-color:rgba(124,185,255,.32)">${esc(t('onboarding_workspace_browse_use'))}</button>
@@ -418,7 +421,7 @@ function _ensureOnboardingWorkspaceBrowseModal(){
     </div>`;
   modal.addEventListener('click',()=>closeOnboardingWorkspaceBrowse());
   overlay.appendChild(modal);
-  $('onboardingWsBrowseUp').onclick=(e)=>{e.stopPropagation();void _onboardingWsBrowseGoUp();};
+  $('onboardingWsBrowseClose').onclick=(e)=>{e.stopPropagation();closeOnboardingWorkspaceBrowse();};
   $('onboardingWsBrowseCancel').onclick=(e)=>{e.stopPropagation();closeOnboardingWorkspaceBrowse();};
   $('onboardingWsBrowseUse').onclick=(e)=>{e.stopPropagation();_onboardingWsBrowseConfirm();};
   return modal;
@@ -430,45 +433,66 @@ function closeOnboardingWorkspaceBrowse(){
 }
 
 async function openOnboardingWorkspaceBrowse(){
-  try{
-    const init=String(ONBOARDING.form.workspace||'').trim();
-    const r=await api('/api/system/pick-folder',{method:'POST',body:JSON.stringify({initial_dir:init})});
-    if(r&&r.ok===true&&typeof r.path==='string'&&r.path.trim()){
-      _applyOnboardingWorkspacePath(r.path.trim());
-      return;
-    }
-    if(r&&r.cancelled===true) return;
-    if(r&&r.ok===false&&r.message&&(r.error==='picker_failed'||r.error==='validation_failed')){
-      _setOnboardingNotice(r.message,'warn');
-    }
-  }catch(e){
-    console.warn('native pick-folder',e);
-  }
-  _openOnboardingWorkspaceServerBrowseModal();
-}
-
-function _openOnboardingWorkspaceServerBrowseModal(){
   const modal=_ensureOnboardingWorkspaceBrowseModal();
   if(!modal) return;
+  // Start from current input value, or drive roots if empty
   const seed=String(ONBOARDING.form.workspace||'').trim();
   _onboardingWsBrowseParent=seed||null;
   modal.classList.add('open');
   void _onboardingWsBrowseRefresh();
 }
 
-function _onboardingWsBrowseGoUp(){
-  const up=_onboardingWsBrowseParentPath(_onboardingWsBrowseParent||'');
-  _onboardingWsBrowseParent=up;
+function _onboardingWsBrowseGoTo(path){
+  _onboardingWsBrowseParent=path||null;
   void _onboardingWsBrowseRefresh();
 }
 
 function _onboardingWsBrowseConfirm(){
-  if(_onboardingWsBrowseParent==null||_onboardingWsBrowseParent===''){
+  if(!_onboardingWsBrowseParent){
     closeOnboardingWorkspaceBrowse();
     return;
   }
   _applyOnboardingWorkspacePath(_onboardingWsBrowseParent);
   closeOnboardingWorkspaceBrowse();
+}
+
+function _onboardingWsBrowseRenderBreadcrumb(currentPath){
+  const el=$('onboardingWsBrowseBreadcrumb');
+  if(!el) return;
+  if(!currentPath){
+    el.innerHTML=`<span class="ob-bc-seg ob-bc-root">My Computer</span>`;
+    return;
+  }
+  // Build path segments: e.g. "C:\Users\Admin" → ["C:", "Users", "Admin"]
+  const norm=String(currentPath).replace(/\\/g,'/');
+  const parts=norm.replace(/\/+$/,'').split('/').filter(Boolean);
+  const segs=[];
+  // Root crumb (drives)
+  segs.push(`<button type="button" class="ob-bc-seg ob-bc-btn" data-path="">My Computer</button>`);
+  // Drive crumb: C:
+  if(parts.length>=1){
+    const drivePath=parts[0]+'/';
+    segs.push(`<span class="ob-bc-sep">›</span>`);
+    segs.push(`<button type="button" class="ob-bc-seg ob-bc-btn" data-path="${esc(drivePath)}">${esc(parts[0])}</button>`);
+  }
+  // Sub-dir crumbs
+  for(let i=1;i<parts.length;i++){
+    const segPath=parts.slice(0,i+1).join('/')+'/';
+    const isLast=i===parts.length-1;
+    segs.push(`<span class="ob-bc-sep">›</span>`);
+    if(isLast){
+      segs.push(`<span class="ob-bc-seg ob-bc-current">${esc(parts[i])}</span>`);
+    } else {
+      segs.push(`<button type="button" class="ob-bc-seg ob-bc-btn" data-path="${esc(segPath)}">${esc(parts[i])}</button>`);
+    }
+  }
+  el.innerHTML=segs.join('');
+  el.querySelectorAll('.ob-bc-btn').forEach(btn=>{
+    btn.onclick=(e)=>{
+      e.stopPropagation();
+      _onboardingWsBrowseGoTo(btn.dataset.path||null);
+    };
+  });
 }
 
 function _applyOnboardingWorkspacePath(absPath){
@@ -504,28 +528,34 @@ function _onboardingWsBrowseRowLabel(fullPath){
 
 async function _onboardingWsBrowseRefresh(){
   const listEl=$('onboardingWsBrowseList');
-  const curEl=$('onboardingWsBrowseCurrent');
-  const upBtn=$('onboardingWsBrowseUp');
   const useBtn=$('onboardingWsBrowseUse');
-  if(!listEl||!curEl) return;
-  const prefix=_onboardingWsSuggestQueryPrefix(_onboardingWsBrowseParent||'');
-  curEl.textContent=_onboardingWsBrowseParent||t('onboarding_workspace_browse_roots');
-  if(upBtn) upBtn.disabled=_onboardingWsBrowseParent==null||_onboardingWsBrowseParent==='';
-  if(useBtn) useBtn.disabled=_onboardingWsBrowseParent==null||_onboardingWsBrowseParent==='';
+  const selPath=$('onboardingWsBrowseSelectedPath');
+  if(!listEl) return;
+
+  const current=_onboardingWsBrowseParent||'';
+  _onboardingWsBrowseRenderBreadcrumb(current);
+  if(useBtn) useBtn.disabled=!current;
+  if(selPath) selPath.textContent=current||'—';
+
   listEl.innerHTML=`<div class="onboarding-ws-browse-empty">${esc(t('onboarding_workspace_browse_loading'))}</div>`;
   try{
-    const q=prefix?`prefix=${encodeURIComponent(prefix)}&`:'';
-    const data=await api(`/api/workspaces/suggest?${q}limit=200`);
-    const paths=(data&&data.suggestions)||[];
-    if(!paths.length){
+    const url=current?`/api/dir/list?path=${encodeURIComponent(current)}`:'/api/dir/list';
+    const data=await api(url);
+    const entries=(data&&data.entries)||[];
+    if(!entries.length){
       listEl.innerHTML=`<div class="onboarding-ws-browse-empty">${esc(t('onboarding_workspace_browse_empty'))}</div>`;
       return;
     }
-    listEl.innerHTML=paths.map(full=>{
-      const {leaf,parent}=_onboardingWsBrowseRowLabel(full);
-      return `<button type="button" class="onboarding-ws-browse-item" data-path="${esc(full)}"><span class="leaf">${esc(leaf)}</span>${parent?`<span class="sub">${esc(parent)}</span>`:''}</button>`;
-    }).join('');
-    listEl.querySelectorAll('.onboarding-ws-browse-item').forEach(btn=>{
+    listEl.innerHTML=entries.map(({name,path})=>
+      `<button type="button" class="onboarding-ws-browse-item ob-dir-row" data-path="${esc(path)}">
+        <span class="ob-dir-icon">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/></svg>
+        </span>
+        <span class="ob-dir-name">${esc(name)}</span>
+        <span class="ob-dir-arrow">›</span>
+      </button>`
+    ).join('');
+    listEl.querySelectorAll('.ob-dir-row').forEach(btn=>{
       btn.onclick=(e)=>{
         e.stopPropagation();
         const p=btn.getAttribute('data-path');

@@ -1832,35 +1832,9 @@ function _composerWsPickerSetStatus(message,kind){
 }
 
 async function _composerWsPickerChooseNative(){
-  const btn=$('composerWsPickerNative');
-  if(btn&&btn.disabled) return;
-  if(btn){
-    btn.disabled=true;
-    btn.classList.add('loading');
-  }
-  _composerWsPickerSetStatus(t('workspace_picker_native_opening'),'info');
-  try{
-    const initial=String(_composerWsPickerParent||_composerWsPickerActivePath()||'').trim();
-    const r=await api('/api/system/pick-folder',{method:'POST',body:JSON.stringify({initial_dir:initial})});
-    if(r&&r.ok===true&&typeof r.path==='string'&&r.path.trim()){
-      _composerWsPickerSetStatus(t('workspace_picker_native_switching'),'info');
-      await _composerWsPickerUsePath(r.path.trim(),'');
-      return;
-    }
-    if(r&&r.cancelled===true){
-      _composerWsPickerSetStatus(t('workspace_picker_native_cancelled'),'info');
-      return;
-    }
-    const msg=(r&&r.message)||((r&&r.error)==='disabled'?t('workspace_picker_native_unavailable'):t('workspace_picker_native_failed'));
-    _composerWsPickerSetStatus(msg,'warn');
-  }catch(e){
-    _composerWsPickerSetStatus(`${t('workspace_picker_native_failed')} ${e.message||e}`,'warn');
-  }finally{
-    if(btn){
-      btn.disabled=false;
-      btn.classList.remove('loading');
-    }
-  }
+  // Reset browser picker to drive/root level so user can browse from scratch.
+  _composerWsPickerParent=null;
+  await _composerWsPickerRefresh();
 }
 
 function _renderComposerWsPickerSaved(){
@@ -1944,18 +1918,21 @@ async function _composerWsPickerRefresh(){
   if(useBtn) useBtn.disabled=!current;
   listEl.innerHTML=`<div class="workspace-picker-empty">${esc(t('onboarding_workspace_browse_loading'))}</div>`;
   try{
-    const prefix=_composerWsSuggestQueryPrefix(current);
-    const q=prefix?`prefix=${encodeURIComponent(prefix)}&`:'';
-    const data=await api(`/api/workspaces/suggest?${q}limit=200`);
-    const paths=(data&&data.suggestions)||[];
-    if(!paths.length){
+    const url=current
+      ?`/api/dir/list?path=${encodeURIComponent(current)}`
+      :'/api/dir/list';
+    const data=await api(url);
+    const entries=(data&&data.entries)||[];
+    if(!entries.length){
       listEl.innerHTML=`<div class="workspace-picker-empty">${esc(t('onboarding_workspace_browse_empty'))}</div>`;
       return;
     }
-    listEl.innerHTML=paths.map(full=>{
-      const {leaf,parent}=_composerWsPickerRowLabel(full);
-      return `<button type="button" class="workspace-picker-folder" data-path="${esc(full)}"><span>${esc(leaf)}</span>${parent?`<small>${esc(parent)}</small>`:''}</button>`;
-    }).join('');
+    listEl.innerHTML=entries.map(({name,path})=>
+      `<button type="button" class="workspace-picker-folder ws-picker-folder-row" data-path="${esc(path)}">
+        <span class="ws-picker-folder-icon">${li('folder',14)}</span>
+        <span class="ws-picker-folder-name">${esc(name)}</span>
+      </button>`
+    ).join('');
     listEl.querySelectorAll('.workspace-picker-folder').forEach(btn=>{
       btn.onclick=(e)=>{
         e.stopPropagation();
@@ -1975,6 +1952,8 @@ document.addEventListener('click',e=>{
   ) closeWsDropdown();
 });
 window.addEventListener('resize',()=>{
+  if(window._resizeLast&&Date.now()-window._resizeLast<60) return;
+  window._resizeLast=Date.now();
   const dd=$('composerWsDropdown');
   if(dd&&dd.classList.contains('open')) _positionComposerWsDropdown();
 });
@@ -2539,6 +2518,11 @@ function _renderProfileDetail(p, activeName){
         <div class="detail-card-title">Profile</div>
         ${rows.join('')}
       </div>
+      <div class="profile-detail-actions">
+        <button class="profile-detail-cfg-btn" onclick="switchPanel('settings');setTimeout(()=>switchSettingsSection('providers'),80);">
+          ${li('settings',13)} ${esc(t('configure_api_keys') || 'API Keys & Models')}
+        </button>
+      </div>
     </div>`;
   body.style.display = '';
   if (empty) empty.style.display = 'none';
@@ -2615,6 +2599,25 @@ function renderProfileDropdown(data) {
   const active = (S.activeProfile && profiles.some(p => p.name === S.activeProfile))
     ? S.activeProfile
     : (data.active || 'default');
+
+  // ── Current config summary ────────────────────────────────────────────────
+  const _curModel = ($('composerModelLabel') && $('composerModelLabel').textContent.trim())
+    || (S.session && S.session.model) || '';
+  const _curProvider = window._activeProvider || (S.session && S.session.model_provider) || '';
+  if (_curModel || _curProvider) {
+    const summary = document.createElement('div');
+    summary.className = 'profile-config-summary';
+    const provTag = _curProvider
+      ? `<span class="profile-config-tag">${esc(_curProvider)}</span>` : '';
+    const modelTag = _curModel
+      ? `<span class="profile-config-model">${esc(_curModel.split('/').pop())}</span>` : '';
+    summary.innerHTML =
+      `<div class="profile-config-head">${esc(t('profile_current_config') || 'Current config')}</div>` +
+      `<div class="profile-config-row">${provTag}${modelTag}</div>`;
+    dd.appendChild(summary);
+    const sumSep = document.createElement('div'); sumSep.className = 'ws-divider'; dd.appendChild(sumSep);
+  }
+
   for (const p of profiles) {
     const opt = document.createElement('div');
     opt.className = 'profile-opt' + (p.name === active ? ' active' : '');
@@ -2639,6 +2642,17 @@ function renderProfileDropdown(data) {
   mgmt.innerHTML = `${li('settings',12)} ${esc(t('manage_profiles'))}`;
   mgmt.onclick = () => { closeProfileDropdown(); mobileSwitchPanel('profiles'); };
   dd.appendChild(mgmt);
+
+  // ── Configure API & Keys shortcut ─────────────────────────────────────────
+  const provCfg = document.createElement('div');
+  provCfg.className = 'profile-opt ws-manage';
+  provCfg.innerHTML = `${li('lock',12)} ${esc(t('configure_api_keys') || 'API Keys & Models')}`;
+  provCfg.onclick = () => {
+    closeProfileDropdown();
+    switchPanel('settings');
+    setTimeout(() => switchSettingsSection('providers'), 80);
+  };
+  dd.appendChild(provCfg);
 }
 
 function toggleProfileDropdown() {
@@ -2666,6 +2680,8 @@ document.addEventListener('click', e => {
   if (!e.target.closest('#profileChipWrap') && !e.target.closest('#profileDropdown')) closeProfileDropdown();
 });
 window.addEventListener('resize',()=>{
+  if(window._resizeLast&&Date.now()-window._resizeLast<60) return;
+  window._resizeLast=Date.now();
   const dd=$('profileDropdown');
   if(dd&&dd.classList.contains('open')) _positionProfileDropdown();
 });
@@ -3673,13 +3689,20 @@ async function _refreshProviderModels(providerId, btn){
   try{
     const res=await api('/api/models/refresh',{method:'POST',body:JSON.stringify({provider:providerId})});
     if(res.ok){
-      showToast(t('providers_models_refreshed')||('Models refreshed for '+res.provider));
+      const count=(res.models||[]).length;
+      showToast((t('providers_models_refreshed')||'Models refreshed')+(count?` (${count})`:''));
+      // Re-render the providers panel so the updated model list is visible.
+      await loadProvidersPanel();
+      // Re-open the card that was refreshed so the user sees the result.
+      const card=document.querySelector(`.provider-card[data-provider="${CSS.escape(providerId)}"]`);
+      if(card&&!card.classList.contains('open')) card.classList.add('open');
     }else{
       showToast(res.error||'Failed to refresh models');
+      btn.disabled=false;
+      btn.innerHTML=orig;
     }
   }catch(e){
     showToast('Error: '+e.message);
-  }finally{
     btn.disabled=false;
     btn.innerHTML=orig;
   }

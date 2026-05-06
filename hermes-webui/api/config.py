@@ -1937,8 +1937,21 @@ def get_available_models() -> dict:
                         label = _format_ollama_label(model_id) if provider in ("ollama", "ollama-cloud") else model_name
                         auto_detected_models.append({"id": model_id, "label": label})
                         detected_providers.add(provider.lower())
-            except Exception:
-                logger.debug("Custom endpoint unreachable or misconfigured for provider: %s", provider)
+            except Exception as _probe_exc:
+                _probe_msg = str(_probe_exc).lower()
+                if provider == "lmstudio" and (
+                    "401" in str(_probe_exc)
+                    or "malformed lm studio api token" in _probe_msg
+                    or "invalid_api_key" in _probe_msg
+                    or "lmstudio.ai/docs/developer/core/authentication" in _probe_msg
+                ):
+                    logger.warning(
+                        "LM Studio authentication is enabled but no valid API key is configured. "
+                        "Either disable authentication in LM Studio (Developer → API → Authentication: OFF) "
+                        "or add your LM Studio API key to config.yaml under providers.lmstudio.api_key."
+                    )
+                else:
+                    logger.debug("Custom endpoint unreachable or misconfigured for provider: %s", provider)
 
         _custom_providers_cfg = cfg.get("custom_providers", [])
         _named_custom_groups: dict = {}

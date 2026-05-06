@@ -13,7 +13,7 @@ using System.Reflection;
 [assembly: System.Reflection.AssemblyCompanyAttribute("HermesWebUI")]
 [assembly: System.Reflection.AssemblyConfigurationAttribute("Release")]
 [assembly: System.Reflection.AssemblyFileVersionAttribute("1.0.0.0")]
-[assembly: System.Reflection.AssemblyInformationalVersionAttribute("1.0.0")]
+[assembly: System.Reflection.AssemblyInformationalVersionAttribute("1.0.0+f882ad2e46221e32de8acd86fcd989b01908ea46")]
 [assembly: System.Reflection.AssemblyProductAttribute("HermesWebUI")]
 [assembly: System.Reflection.AssemblyTitleAttribute("HermesWebUI")]
 [assembly: System.Reflection.AssemblyVersionAttribute("1.0.0.0")]

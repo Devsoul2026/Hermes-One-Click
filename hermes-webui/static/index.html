@@ -119,6 +119,19 @@
       <button type="button" class="app-titlebar-lang-btn" id="titlebarLangEn" onclick="switchTitlebarLocale('en')" aria-pressed="false" title="English">EN</button>
       <button type="button" class="app-titlebar-lang-btn" id="titlebarLangZh" onclick="switchTitlebarLocale('zh')" aria-pressed="true" title="中文">中文</button>
     </div>
+    <div class="titlebar-more-wrap">
+      <button type="button" class="titlebar-more-btn" id="titlebarMoreBtn" onclick="toggleTitlebarDropdown()" aria-label="More options" title="More">⋮</button>
+      <div class="titlebar-dropdown" id="titlebarDropdown">
+        <button type="button" class="titlebar-dd-btn" onclick="closeTitlebarDropdown();openLogsModal()" title="导出诊断日志">日志</button>
+        <button type="button" class="titlebar-dd-btn" onclick="closeTitlebarDropdown();openAboutModal()" data-i18n="titlebar_about_us">About us</button>
+        <button type="button" class="titlebar-dd-btn" onclick="closeTitlebarDropdown();openBusinessCoopModal()" data-i18n="titlebar_business_coop">Business</button>
+        <button type="button" class="titlebar-dd-btn" onclick="closeTitlebarDropdown();openAgentVersionModal()" data-i18n="titlebar_view_version">Version</button>
+        <a class="titlebar-dd-btn" href="https://github.com/Devsoul2026/Hermes-One-Click" target="_blank" rel="noopener noreferrer">GitHub</a>
+        <button type="button" class="titlebar-dd-btn" onclick="closeTitlebarDropdown();switchTitlebarLocale('en')" id="titlebarDdLangEn">EN</button>
+        <button type="button" class="titlebar-dd-btn" onclick="closeTitlebarDropdown();switchTitlebarLocale('zh')" id="titlebarDdLangZh">中文</button>
+        <button type="button" class="titlebar-dd-btn" onclick="closeTitlebarDropdown();reloadGatewayFromTitlebar()">Reload Gateway</button>
+      </div>
+    </div>
   </div>
 </header>
 <div class="layout">
@@ -1247,17 +1260,8 @@
     syncFallbackButton();
   });
   window.__hermesComposerInput = function () {
-    var msg = document.getElementById('msg');
-    var btn = document.getElementById('btnSend');
-    if (typeof window.autoResize === 'function') {
-      try { window.autoResize(); } catch (e) {}
-    }
-    if (typeof window.updateSendBtn === 'function') {
-      try { window.updateSendBtn(); } catch (e) {}
-    }
-    if (msg && btn && (msg.value || '').trim() && !msg.disabled) {
-      btn.disabled = false;
-      btn.classList.add('visible');
+    if (typeof window.handleComposerInput === 'function') {
+      try { window.handleComposerInput(); } catch (e) {}
     }
   };
   window.__hermesDirectComposerSend = function (ev) {
@@ -1285,6 +1289,18 @@
     if (ev.isComposing || ev.keyCode === 229) return;
     window.__hermesDirectComposerSend(ev);
   };
+
+  function toggleTitlebarDropdown() {
+    var dd = document.getElementById('titlebarDropdown');
+    if (dd) dd.classList.toggle('open');
+  }
+  function closeTitlebarDropdown() {
+    var dd = document.getElementById('titlebarDropdown');
+    if (dd) dd.classList.remove('open');
+  }
+  document.addEventListener('click', function (e) {
+    if (!e.target.closest('.titlebar-more-wrap')) closeTitlebarDropdown();
+  });
 </script>
 </body>
 </html>

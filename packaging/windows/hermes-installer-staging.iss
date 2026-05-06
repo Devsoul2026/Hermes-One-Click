@@ -2,7 +2,7 @@
 ; Compile from repo root or packaging\windows; staging path is relative to this .iss file.
 
 #define MyAppName "Hermes One-Click"
-#define MyAppVersion "0.1.0-dev"
+#define MyAppVersion "0.7.0"
 #define MyAppPublisher "Devsoul"
 
 [Setup]
@@ -23,9 +23,13 @@ WizardStyle=modern
 PrivilegesRequired=lowest
 ArchitecturesInstallIn64BitMode=x64
 DisableDirPage=no
+; Auto-detect Windows UI language — no dialog shown to user
+ShowLanguageDialog=no
+LanguageDetectionMethod=uilanguage
 
 [Languages]
 Name: "english"; MessagesFile: "compiler:Default.isl"
+Name: "chinesesimplified"; MessagesFile: "ChineseSimplified.isl"
 
 [Tasks]
 Name: "desktopicon"; Description: "{cm:CreateDesktopIcon}"; GroupDescription: "{cm:AdditionalIcons}"; Flags: unchecked

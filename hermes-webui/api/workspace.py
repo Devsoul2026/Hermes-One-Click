@@ -784,3 +784,41 @@ def git_info_for_workspace(workspace: Path) -> dict:
         'behind': behind,
         'is_git': True,
     }
+
+
+def list_directory_entries(path: str) -> list[dict]:
+    """Return child directories of *path*, or all drive roots when path is empty.
+
+    Each entry is ``{"name": str, "path": str}``.  Used by the in-browser
+    folder picker so users can browse without a native OS dialog.
+    """
+    import string
+
+    if not path:
+        # Return available drive letters on Windows; fall back to filesystem root elsewhere.
+        if os.name == "nt":
+            drives = []
+            for letter in string.ascii_uppercase:
+                drive = f"{letter}:\\"
+                if os.path.isdir(drive):
+                    drives.append({"name": f"{letter}:", "path": drive})
+            return drives
+        return [{"name": "/", "path": "/"}]
+
+    try:
+        base = Path(path)
+        if not base.is_dir():
+            return []
+        entries = []
+        for child in sorted(base.iterdir(), key=lambda p: p.name.lower()):
+            try:
+                if child.is_dir() and not child.name.startswith("."):
+                    entries.append({"name": child.name, "path": str(child)})
+            except PermissionError:
+                pass
+        return entries
+    except PermissionError:
+        return []
+    except Exception as exc:
+        logger.debug("list_directory_entries(%r) failed: %s", path, exc)
+        return []
