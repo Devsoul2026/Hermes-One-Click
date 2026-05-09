@@ -3961,9 +3961,24 @@ function startCronPolling(){
       const data=await api(`/api/crons/recent?since=${_cronPollSince}`);
       if(data.completions&&data.completions.length>0){
         for(const c of data.completions){
-          showToast(t('cron_completion_status', c.name, c.status==='error' ? t('status_failed') : t('status_completed')),4000);
           _cronPollSince=Math.max(_cronPollSince,c.completed_at);
           if(c.job_id) _cronNewJobIds.add(String(c.job_id));
+          // Deliver cron result into the chat UI as a new session.
+          try{
+            const r=await api('/api/crons/deliver-to-chat',{method:'POST',body:JSON.stringify({job_id:c.job_id})});
+            if(r&&r.session_id){
+              if(typeof renderSessionList==='function') await renderSessionList();
+              if(typeof loadSession==='function') await loadSession(r.session_id);
+            }else{
+              const header=t('cron_completion_status',c.name,c.status==='error'?t('status_failed'):t('status_completed'));
+              const body2=c.snippet?String(c.snippet).trim():'';
+              showToast(body2?header+'\n'+body2:header,body2?12000:6000);
+            }
+          }catch(e){
+            const header=t('cron_completion_status',c.name,c.status==='error'?t('status_failed'):t('status_completed'));
+            const body2=c.snippet?String(c.snippet).trim():'';
+            showToast(body2?header+'\n'+body2:header,body2?12000:6000);
+          }
         }
         // _cronUnreadCount is derived from _cronNewJobIds.size in updateCronBadge.
         updateCronBadge();

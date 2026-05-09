@@ -53,7 +53,7 @@ export function OAuthLoginModal({ provider, onClose, onSuccess }: Props) {
       .catch((e) => {
         if (!isMounted.current) return;
         setPhase("error");
-        setErrorMsg(`${t.oauth.startLoginFailed}: ${e}`);
+        setErrorMsg(`Failed to start login: ${e}`);
       });
     return () => {
       isMounted.current = false;
@@ -92,30 +92,25 @@ export function OAuthLoginModal({ provider, onClose, onSuccess }: Props) {
           setPhase("approved");
           if (pollTimer.current !== null)
             window.clearInterval(pollTimer.current);
-          onSuccess(
-            t.oauth.connectedToast.replace("{name}", provider.name),
-          );
+          onSuccess(`${provider.name} connected`);
           window.setTimeout(() => isMounted.current && onClose(), 1500);
         } else if (resp.status !== "pending") {
           setPhase("error");
-          setErrorMsg(
-            resp.error_message ||
-              t.oauth.loginStatusFailed.replace("{status}", resp.status),
-          );
+          setErrorMsg(resp.error_message || `Login ${resp.status}`);
           if (pollTimer.current !== null)
             window.clearInterval(pollTimer.current);
         }
       } catch (e) {
         if (!isMounted.current) return;
         setPhase("error");
-        setErrorMsg(`${t.oauth.pollingFailed}: ${e}`);
+        setErrorMsg(`Polling failed: ${e}`);
         if (pollTimer.current !== null) window.clearInterval(pollTimer.current);
       }
     }, 2000);
     return () => {
       if (pollTimer.current !== null) window.clearInterval(pollTimer.current);
     };
-  }, [start, phase, provider.id, provider.name, onSuccess, onClose, t]);
+  }, [start, phase, provider.id, provider.name, onSuccess, onClose]);
 
   const handleSubmitPkceCode = async () => {
     if (!start || start.flow !== "pkce") return;
@@ -131,18 +126,16 @@ export function OAuthLoginModal({ provider, onClose, onSuccess }: Props) {
       if (!isMounted.current) return;
       if (resp.ok && resp.status === "approved") {
         setPhase("approved");
-        onSuccess(
-          t.oauth.connectedToast.replace("{name}", provider.name),
-        );
+        onSuccess(`${provider.name} connected`);
         window.setTimeout(() => isMounted.current && onClose(), 1500);
       } else {
         setPhase("error");
-        setErrorMsg(resp.message || t.oauth.tokenExchangeFailed);
+        setErrorMsg(resp.message || "Token exchange failed");
       }
     } catch (e) {
       if (!isMounted.current) return;
       setPhase("error");
-      setErrorMsg(`${t.oauth.submitFailed}: ${e}`);
+      setErrorMsg(`Submit failed: ${e}`);
     }
   };
 
@@ -364,7 +357,7 @@ export function OAuthLoginModal({ provider, onClose, onSuccess }: Props) {
                       .catch((e) => {
                         if (!isMounted.current) return;
                         setPhase("error");
-                        setErrorMsg(`${t.oauth.retryFailed}: ${e}`);
+                        setErrorMsg(`${t.common.retry} failed: ${e}`);
                       });
                   }}
                 >

@@ -29,30 +29,25 @@ import { usePageHeader } from "@/contexts/usePageHeader";
 import { useI18n } from "@/i18n";
 import { PluginSlot } from "@/plugins";
 import { ModelPickerDialog } from "@/components/ModelPickerDialog";
-import type { Translations } from "@/i18n/types";
 
-const PERIOD_DAYS = [7, 30, 90] as const;
-
-function periodLabelForDays(t: Translations, days: number): string {
-  if (days === 7) return t.modelsPage.period7d;
-  if (days === 30) return t.modelsPage.period30d;
-  if (days === 90) return t.modelsPage.period90d;
-  return `${days}d`;
-}
-
-/** Must match _AUX_TASK_SLOTS in hermes_cli/web_server.py. */
-const AUX_TASK_KEYS = [
-  "vision",
-  "web_extract",
-  "compression",
-  "session_search",
-  "skills_hub",
-  "approval",
-  "mcp",
-  "title_generation",
-  "curator",
+const PERIODS = [
+  { label: "7d", days: 7 },
+  { label: "30d", days: 30 },
+  { label: "90d", days: 90 },
 ] as const;
-type AuxTaskKey = (typeof AUX_TASK_KEYS)[number];
+
+// Must match _AUX_TASK_SLOTS in hermes_cli/web_server.py.
+const AUX_TASKS: readonly { key: string; label: string; hint: string }[] = [
+  { key: "vision", label: "Vision", hint: "Image analysis" },
+  { key: "web_extract", label: "Web Extract", hint: "Page summarization" },
+  { key: "compression", label: "Compression", hint: "Context compaction" },
+  { key: "session_search", label: "Session Search", hint: "Recall queries" },
+  { key: "skills_hub", label: "Skills Hub", hint: "Skill search" },
+  { key: "approval", label: "Approval", hint: "Smart auto-approve" },
+  { key: "mcp", label: "MCP", hint: "MCP tool routing" },
+  { key: "title_generation", label: "Title Gen", hint: "Session titles" },
+  { key: "curator", label: "Curator", hint: "Skill-usage review" },
+] as const;
 
 function formatTokens(n: number): string {
   if (n >= 1_000_000) return `${(n / 1_000_000).toFixed(1)}M`;
@@ -86,22 +81,20 @@ function TokenBar({
   output,
   cacheRead,
   reasoning,
-  labels,
 }: {
   input: number;
   output: number;
   cacheRead: number;
   reasoning: number;
-  labels: Translations["modelsPage"]["tokenBar"];
 }) {
   const total = input + output + cacheRead + reasoning;
   if (total === 0) return null;
 
   const segments = [
-    { value: cacheRead, color: "bg-blue-400/60", label: labels.cacheRead },
-    { value: reasoning, color: "bg-purple-400/60", label: labels.reasoning },
-    { value: input, color: "bg-[#ffe6cb]/70", label: labels.input },
-    { value: output, color: "bg-emerald-500/70", label: labels.output },
+    { value: cacheRead, color: "bg-blue-400/60", label: "Cache Read" },
+    { value: reasoning, color: "bg-purple-400/60", label: "Reasoning" },
+    { value: input, color: "bg-[#ffe6cb]/70", label: "Input" },
+    { value: output, color: "bg-emerald-500/70", label: "Output" },
   ].filter((s) => s.value > 0);
 
   return (
@@ -129,10 +122,8 @@ function TokenBar({
 
 function CapabilityBadges({
   capabilities,
-  labels,
 }: {
   capabilities: ModelsAnalyticsModelEntry["capabilities"];
-  labels: Translations["modelsPage"]["capabilities"];
 }) {
   const hasAny =
     capabilities.supports_tools ||
@@ -145,17 +136,17 @@ function CapabilityBadges({
     <div className="flex flex-wrap items-center gap-1.5">
       {capabilities.supports_tools && (
         <span className="inline-flex items-center gap-1 bg-emerald-500/10 px-1.5 py-0.5 text-[10px] font-medium text-emerald-600 dark:text-emerald-400">
-          <Wrench className="h-2.5 w-2.5" /> {labels.tools}
+          <Wrench className="h-2.5 w-2.5" /> Tools
         </span>
       )}
       {capabilities.supports_vision && (
         <span className="inline-flex items-center gap-1 bg-blue-500/10 px-1.5 py-0.5 text-[10px] font-medium text-blue-600 dark:text-blue-400">
-          <Eye className="h-2.5 w-2.5" /> {labels.vision}
+          <Eye className="h-2.5 w-2.5" /> Vision
         </span>
       )}
       {capabilities.supports_reasoning && (
         <span className="inline-flex items-center gap-1 bg-purple-500/10 px-1.5 py-0.5 text-[10px] font-medium text-purple-600 dark:text-purple-400">
-          <Brain className="h-2.5 w-2.5" /> {labels.reasoning}
+          <Brain className="h-2.5 w-2.5" /> Reasoning
         </span>
       )}
       {capabilities.model_family && (
@@ -186,7 +177,6 @@ function UseAsMenu({
   mainAuxTask: string | null;
   onAssigned(): void;
 }) {
-  const { t } = useI18n();
   const [open, setOpen] = useState(false);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -196,7 +186,7 @@ function UseAsMenu({
     task: string,
   ) => {
     if (!provider || !model) {
-      setError(t.modelsPage.useAs.missingProviderModel);
+      setError("Missing provider/model");
       return;
     }
     setBusy(true);
@@ -233,7 +223,7 @@ function UseAsMenu({
         className="text-[10px] h-6 px-2"
         prefix={busy ? <Spinner /> : null}
       >
-        {t.modelsPage.useAs.button} <ChevronDown className="h-3 w-3" />
+        Use as <ChevronDown className="h-3 w-3" />
       </Button>
       {open && (
         <div className="absolute right-0 top-full mt-1 z-50 min-w-[220px] border border-border bg-card shadow-lg">
@@ -245,17 +235,17 @@ function UseAsMenu({
           >
             <span className="flex items-center gap-2">
               <Star className="h-3 w-3" />
-              {t.modelsPage.useAs.mainModel}
+              Main model
             </span>
             {isMain && (
               <span className="text-[9px] uppercase tracking-wider text-primary/80">
-                {t.modelsPage.useAs.current}
+                current
               </span>
             )}
           </button>
 
           <div className="border-t border-border/50 px-3 py-1.5 text-[9px] uppercase tracking-wider text-muted-foreground">
-            {t.modelsPage.useAs.auxiliaryHeading}
+            Auxiliary task
           </div>
 
           <button
@@ -264,21 +254,21 @@ function UseAsMenu({
             disabled={busy}
             className="flex w-full items-center justify-between px-3 py-1.5 text-xs hover:bg-muted/50 disabled:opacity-40"
           >
-            <span>{t.modelsPage.useAs.allAuxiliary}</span>
+            <span>All auxiliary tasks</span>
           </button>
 
-          {AUX_TASK_KEYS.map((key) => (
+          {AUX_TASKS.map((t) => (
             <button
-              key={key}
+              key={t.key}
               type="button"
-              onClick={() => assign("auxiliary", key)}
+              onClick={() => assign("auxiliary", t.key)}
               disabled={busy}
               className="flex w-full items-center justify-between px-3 py-1.5 text-xs hover:bg-muted/50 disabled:opacity-40"
             >
-              <span>{t.modelsPage.auxTasks[key].label}</span>
-              {mainAuxTask === key && (
+              <span>{t.label}</span>
+              {mainAuxTask === t.key && (
                 <span className="text-[9px] uppercase tracking-wider text-primary/80">
-                  {t.modelsPage.useAs.current}
+                  current
                 </span>
               )}
             </button>
@@ -342,12 +332,12 @@ function ModelCard({
               </CardTitle>
               {isMain && (
                 <span className="inline-flex items-center gap-0.5 bg-primary/15 px-1.5 py-0.5 text-[9px] font-medium uppercase tracking-wider text-primary">
-                  <Star className="h-2.5 w-2.5" /> {t.modelsPage.card.mainBadge}
+                  <Star className="h-2.5 w-2.5" /> main
                 </span>
               )}
               {mainAuxTask && (
                 <span className="inline-flex items-center bg-purple-500/10 px-1.5 py-0.5 text-[9px] font-medium uppercase tracking-wider text-purple-600 dark:text-purple-400">
-                  {t.modelsPage.card.auxBadge} · {mainAuxTask}
+                  aux · {mainAuxTask}
                 </span>
               )}
             </div>
@@ -359,12 +349,12 @@ function ModelCard({
               )}
               {caps.context_window && caps.context_window > 0 && (
                 <span className="text-[10px] text-muted-foreground">
-                  {formatTokenCount(caps.context_window)} {t.modelsPage.card.ctx}
+                  {formatTokenCount(caps.context_window)} ctx
                 </span>
               )}
               {caps.max_output_tokens && caps.max_output_tokens > 0 && (
                 <span className="text-[10px] text-muted-foreground">
-                  {formatTokenCount(caps.max_output_tokens)} {t.modelsPage.card.out}
+                  {formatTokenCount(caps.max_output_tokens)} out
                 </span>
               )}
             </div>
@@ -394,7 +384,6 @@ function ModelCard({
           output={entry.output_tokens}
           cacheRead={entry.cache_read_tokens}
           reasoning={entry.reasoning_tokens}
-          labels={t.modelsPage.tokenBar}
         />
 
         <div className="grid grid-cols-3 gap-2 text-xs">
@@ -442,10 +431,7 @@ function ModelCard({
           )}
         </div>
 
-        <CapabilityBadges
-          capabilities={entry.capabilities}
-          labels={t.modelsPage.capabilities}
-        />
+        <CapabilityBadges capabilities={entry.capabilities} />
       </CardContent>
     </Card>
   );
@@ -468,7 +454,6 @@ function ModelSettingsPanel({
   refreshKey: number;
   onSaved(): void;
 }) {
-  const { t } = useI18n();
   const [expanded, setExpanded] = useState(false);
   const [picker, setPicker] = useState<PickerTarget | null>(null);
   const [resetBusy, setResetBusy] = useState(false);
@@ -492,7 +477,7 @@ function ModelSettingsPanel({
   };
 
   const resetAllAux = async () => {
-    if (!window.confirm(t.modelsPage.settings.resetAllConfirm)) {
+    if (!window.confirm("Reset every auxiliary task to 'auto'? This overrides any per-task overrides you've set.")) {
       return;
     }
     setResetBusy(true);
@@ -515,9 +500,9 @@ function ModelSettingsPanel({
         <div className="flex items-center justify-between gap-3 flex-wrap">
           <div className="flex items-center gap-2">
             <Settings2 className="h-4 w-4 text-muted-foreground" />
-            <CardTitle className="text-sm">{t.modelsPage.settings.title}</CardTitle>
+            <CardTitle className="text-sm">Model Settings</CardTitle>
             <span className="text-[10px] text-muted-foreground">
-              {t.modelsPage.settings.appliesNewSessions}
+              applies to new sessions
             </span>
           </div>
           <Button
@@ -526,9 +511,7 @@ function ModelSettingsPanel({
             onClick={() => setExpanded((v) => !v)}
             className="text-xs"
           >
-            {expanded
-              ? t.modelsPage.settings.hideAuxiliary
-              : t.modelsPage.settings.showAuxiliary}
+            {expanded ? "Hide auxiliary" : "Show auxiliary"}
             <ChevronDown
               className={`h-3 w-3 transition-transform ${expanded ? "rotate-180" : ""}`}
             />
@@ -543,13 +526,13 @@ function ModelSettingsPanel({
             <div className="flex items-center gap-2 mb-0.5">
               <Star className="h-3 w-3 text-primary" />
               <span className="text-xs font-medium uppercase tracking-wider">
-                {t.modelsPage.settings.mainModel}
+                Main model
               </span>
             </div>
             <div className="text-xs font-mono text-muted-foreground truncate">
-              {mainProv || t.modelsPage.settings.unset}
+              {mainProv || "(unset)"}
               {mainProv && mainModel && " · "}
-              {mainModel || t.modelsPage.settings.unset}
+              {mainModel || "(unset)"}
             </div>
           </div>
           <Button
@@ -557,7 +540,7 @@ function ModelSettingsPanel({
             onClick={() => setPicker({ kind: "main" })}
             className="text-xs"
           >
-            {t.modelsPage.settings.change}
+            Change
           </Button>
         </div>
 
@@ -566,7 +549,7 @@ function ModelSettingsPanel({
           <div className="space-y-1 border-t border-border/50 pt-3">
             <div className="flex items-center justify-between pb-1">
               <div className="text-[10px] uppercase tracking-wider text-muted-foreground">
-                {t.modelsPage.settings.auxiliaryTasks}
+                Auxiliary tasks
               </div>
               <Button
                 size="sm"
@@ -576,44 +559,46 @@ function ModelSettingsPanel({
                 className="text-[10px] h-6"
                 prefix={resetBusy ? <Spinner /> : null}
               >
-                {t.modelsPage.settings.resetAllToAuto}
+                Reset all to auto
               </Button>
             </div>
 
             <p className="text-[10px] text-muted-foreground/80 pb-2">
-              {t.modelsPage.settings.auxiliaryIntro}
+              Auxiliary tasks handle side-jobs like vision, session search, and
+              compression. <span className="font-mono">auto</span> means
+              &quot;use the main model&quot;. Override per-task when you want a
+              cheap/fast model for a specific job.
             </p>
 
-            {AUX_TASK_KEYS.map((key) => {
-              const cur = aux?.tasks.find((a) => a.task === key);
+            {AUX_TASKS.map((t) => {
+              const cur = aux?.tasks.find((a) => a.task === t.key);
               const isAuto =
                 !cur || cur.provider === "auto" || !cur.provider;
-              const taskMeta = t.modelsPage.auxTasks[key];
               return (
                 <div
-                  key={key}
+                  key={t.key}
                   className="flex items-center justify-between gap-3 px-3 py-1.5 border border-border/30 bg-card/50 hover:bg-muted/20 transition-colors"
                 >
                   <div className="min-w-0 flex-1">
                     <div className="flex items-baseline gap-2">
-                      <span className="text-xs font-medium">{taskMeta.label}</span>
+                      <span className="text-xs font-medium">{t.label}</span>
                       <span className="text-[10px] text-muted-foreground/60">
-                        {taskMeta.hint}
+                        {t.hint}
                       </span>
                     </div>
                     <div className="text-[10px] font-mono text-muted-foreground truncate">
                       {isAuto
-                        ? t.modelsPage.settings.autoUseMain
-                        : `${cur?.provider} · ${cur?.model || t.modelsPage.settings.providerDefault}`}
+                        ? "auto (use main model)"
+                        : `${cur?.provider} · ${cur?.model || "(provider default)"}`}
                     </div>
                   </div>
                   <Button
                     size="sm"
                     outlined
-                    onClick={() => setPicker({ kind: "aux", task: key })}
+                    onClick={() => setPicker({ kind: "aux", task: t.key })}
                     className="text-[10px] h-6"
                   >
-                    {t.modelsPage.settings.change}
+                    Change
                   </Button>
                 </div>
               );
@@ -628,11 +613,11 @@ function ModelSettingsPanel({
             alwaysGlobal
             title={
               picker.kind === "main"
-                ? t.modelsPage.settings.setMainModelTitle
-                : t.modelsPage.settings.setAuxiliaryTitle.replace(
-                    "{task}",
-                    t.modelsPage.auxTasks[picker.task as AuxTaskKey].label,
-                  )
+                ? "Set Main Model"
+                : `Set Auxiliary: ${
+                    AUX_TASKS.find((t) => t.key === picker.task)?.label ??
+                    picker.task
+                  }`
             }
             onApply={async ({ provider, model }) => {
               await applyAssignment({
@@ -689,7 +674,8 @@ export default function ModelsPage() {
   }, []);
 
   useLayoutEffect(() => {
-    const periodLabel = periodLabelForDays(t, days);
+    const periodLabel =
+      PERIODS.find((p) => p.days === days)?.label ?? `${days}d`;
     setAfterTitle(
       <span className="flex items-center gap-2">
         {loading && <Spinner className="shrink-0 text-base text-primary" />}
@@ -701,15 +687,15 @@ export default function ModelsPage() {
     setEnd(
       <div className="flex w-full min-w-0 flex-wrap items-center justify-end gap-2 sm:gap-2">
         <div className="flex flex-wrap items-center gap-1.5">
-          {PERIOD_DAYS.map((d) => (
+          {PERIODS.map((p) => (
             <Button
-              key={d}
+              key={p.label}
               type="button"
               size="sm"
-              outlined={days !== d}
-              onClick={() => setDays(d)}
+              outlined={days !== p.days}
+              onClick={() => setDays(p.days)}
             >
-              {periodLabelForDays(t, d)}
+              {p.label}
             </Button>
           ))}
         </div>
@@ -729,7 +715,7 @@ export default function ModelsPage() {
       setAfterTitle(null);
       setEnd(null);
     };
-  }, [days, loading, load, setAfterTitle, setEnd, t]);
+  }, [days, loading, load, setAfterTitle, setEnd, t.common.refresh]);
 
   useEffect(() => {
     load();

@@ -80,6 +80,14 @@ function RootRedirect() {
   return <Navigate to="/sessions" replace />;
 }
 
+function UnknownRouteFallback({ pluginsLoading }: { pluginsLoading: boolean }) {
+  if (pluginsLoading) {
+    // Render nothing during the plugin-load window — a spinner here would just flash.
+    return null;
+  }
+  return <Navigate to="/sessions" replace />;
+}
+
 const CHAT_NAV_ITEM: NavItem = {
   path: "/chat",
   labelKey: "chat",
@@ -476,7 +484,9 @@ export default function App() {
                   className="font-bold text-[1.125rem] leading-[0.95] tracking-[0.0525rem] text-midground"
                   style={{ mixBlendMode: "plus-lighter" }}
                 >
-                  {t.app.brand}
+                  Hermes
+                  <br />
+                  Agent
                 </Typography>
               </div>
 
@@ -580,7 +590,9 @@ export default function App() {
                   ))}
                   <Route
                     path="*"
-                    element={<Navigate to="/sessions" replace />}
+                    element={
+                      <UnknownRouteFallback pluginsLoading={pluginsLoading} />
+                    }
                   />
                 </Routes>
 
@@ -595,7 +607,7 @@ export default function App() {
                       >
                         <div className="flex items-center gap-2 text-sm text-muted-foreground">
                           <Spinner />
-                          <span>{t.chat.loadingChat}</span>
+                          <span>Loading chat…</span>
                         </div>
                       </div>
                     ) : null

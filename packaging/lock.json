@@ -3,7 +3,7 @@
     "description":  "Pinned upstream revisions for reproducible Windows installer builds.",
     "hermes_agent":  {
                          "git":  "https://github.com/NousResearch/hermes-agent.git",
-                         "revision":  "97acd66b4c58c7945f573a6efd6059e781eb4f8f"
+                         "revision":  "498bfc7bc12a937621b4215312049b1000726df3"
                      },
     "hermes_webui":  {
                          "git":  "https://github.com/NousResearch/hermes-webui.git",

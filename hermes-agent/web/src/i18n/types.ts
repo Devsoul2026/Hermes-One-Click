@@ -40,11 +40,6 @@ export interface Translations {
     failedToToggle: string;
     failedToRemove: string;
     failedToReveal: string;
-    installFailed: string;
-    rescanFailed: string;
-    saveFailed: string;
-    loadFailed: string;
-    commaSeparatedValues: string;
     collapse: string;
     expand: string;
     general: string;
@@ -273,9 +268,6 @@ export interface Translations {
     versionBadge: string;
     showInSidebar: string;
     hideFromSidebar: string;
-    pluginInstalled: string;
-    installUrlPlaceholder: string;
-    loadHubFailed: string;
   };
 
   // ── Profiles page ──
@@ -429,143 +421,6 @@ export interface Translations {
       external: string;
     };
     expiresIn: string;
-    startLoginFailed: string;
-    loginStatusFailed: string;
-    pollingFailed: string;
-    submitFailed: string;
-    retryFailed: string;
-    connectedToast: string;
-    tokenExchangeFailed: string;
-  };
-
-  // ── Chat tab ──
-  chat: {
-    sessionTokenUnavailable: string;
-    authFailedBanner: string;
-    localhostOnlyBanner: string;
-    copyLastTitle: string;
-    copyLastAria: string;
-    copied: string;
-    copyLastLabel: string;
-    loadingChat: string;
-  };
-
-  // ── Chat sidebar (model / tools) ──
-  chatSidebar: {
-    modelHeading: string;
-    switchModelTitle: string;
-    toolsHeading: string;
-    noToolCallsYet: string;
-    reconnect: string;
-    gateway: {
-      idle: string;
-      connecting: string;
-      open: string;
-      closed: string;
-      error: string;
-    };
-    eventsDisconnected: string;
-    eventsRejected: string;
-  };
-
-  // ── Model picker dialog ──
-  modelPicker: {
-    title: string;
-    currentUnknown: string;
-    currentLine: string;
-    filterPlaceholder: string;
-    closeDialog: string;
-    cancel: string;
-    switch: string;
-    loading: string;
-    noMatches: string;
-    noAuthenticatedProviders: string;
-    pickProvider: string;
-    noModelsMatchFilter: string;
-    noModelsForProvider: string;
-    persistGlobal: string;
-    savesConfigHint: string;
-    modelsCount: string;
-    currentTag: string;
-  };
-
-  // ── Models page (settings, cards, picker titles) ──
-  modelsPage: {
-    period7d: string;
-    period30d: string;
-    period90d: string;
-    tokenBar: {
-      cacheRead: string;
-      reasoning: string;
-      input: string;
-      output: string;
-    };
-    capabilities: {
-      tools: string;
-      vision: string;
-      reasoning: string;
-    };
-    useAs: {
-      button: string;
-      mainModel: string;
-      auxiliaryHeading: string;
-      allAuxiliary: string;
-      current: string;
-      missingProviderModel: string;
-    };
-    card: {
-      mainBadge: string;
-      auxBadge: string;
-      ctx: string;
-      out: string;
-    };
-    settings: {
-      title: string;
-      appliesNewSessions: string;
-      hideAuxiliary: string;
-      showAuxiliary: string;
-      mainModel: string;
-      change: string;
-      unset: string;
-      auxiliaryTasks: string;
-      resetAllToAuto: string;
-      resetAllConfirm: string;
-      auxiliaryIntro: string;
-      autoUseMain: string;
-      providerDefault: string;
-      setMainModelTitle: string;
-      setAuxiliaryTitle: string;
-    };
-    auxTasks: {
-      vision: { label: string; hint: string };
-      web_extract: { label: string; hint: string };
-      compression: { label: string; hint: string };
-      session_search: { label: string; hint: string };
-      skills_hub: { label: string; hint: string };
-      approval: { label: string; hint: string };
-      mcp: { label: string; hint: string };
-      title_generation: { label: string; hint: string };
-      curator: { label: string; hint: string };
-    };
-    modelInfoCard: {
-      loading: string;
-      contextWindow: string;
-      maxOutput: string;
-      overrideAuto: string;
-      autoDetected: string;
-    };
-  };
-
-  // ── Tool call row ──
-  toolCall: {
-    runningTitle: string;
-    ariaError: string;
-    ariaDone: string;
-    sectionContext: string;
-    sectionStreaming: string;
-    sectionDiff: string;
-    sectionResult: string;
-    sectionError: string;
   };
 
   // ── Language switcher ──

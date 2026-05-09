@@ -1413,6 +1413,21 @@ def handle_get(handler, parsed) -> bool:
 
         return j(handler, get_gateway_status_dict())
 
+    # ── One-Click self-update (GET) ──
+    if parsed.path == "/api/oc/update-check":
+        from api.oc_update import check_oc_update
+        _oc_qs = parse_qs(parsed.query)
+        force = _oc_qs.get("force", [""])[0].lower() in ("1", "true")
+        return j(handler, check_oc_update(force=force))
+
+    if parsed.path == "/api/oc/update/status":
+        from api.oc_update import get_download_status
+        dl_id = parse_qs(parsed.query).get("id", [""])[0]
+        status = get_download_status(dl_id)
+        if status is None:
+            return bad(handler, "unknown download_id", 404)
+        return j(handler, status)
+
     if handle_connect_app_get(handler, parsed):
         return True
 
@@ -2649,6 +2664,30 @@ def handle_post(handler, parsed) -> bool:
 
     if parsed.path == "/api/crons/resume":
         return _handle_cron_resume(handler, body)
+
+    if parsed.path == "/api/crons/deliver-to-chat":
+        return _handle_cron_deliver_to_chat(handler, body)
+
+    # ── One-Click self-update (POST) ──
+    if parsed.path == "/api/oc/update/start":
+        from api.oc_update import start_download, check_oc_update
+        info = check_oc_update()
+        tag = body.get("tag") or info.get("tag", "")
+        filename = body.get("filename") or info.get("filename", "")
+        if not tag or not filename:
+            return bad(handler, "tag and filename required")
+        dl_id = start_download(tag, filename)
+        return j(handler, {"download_id": dl_id})
+
+    if parsed.path == "/api/oc/update/install":
+        from api.oc_update import launch_installer
+        dl_id = body.get("download_id", "")
+        if not dl_id:
+            return bad(handler, "download_id required")
+        result = launch_installer(dl_id)
+        if result.get("ok"):
+            return j(handler, result)
+        return bad(handler, result.get("message", "Launch failed"), 500)
 
     # ── File ops (POST) ──
     if parsed.path == "/api/file/delete":
@@ -4428,11 +4467,53 @@ def _handle_cron_recent(handler, parsed):
 
     qs = parse_qs(parsed.query)
     since = float(qs.get("since", ["0"])[0])
+
+    def _read_output_file(md_file) -> tuple:
+        """Return (job_name, snippet) from a cron output .md file."""
+        job_name = ""
+        snippet = ""
+        try:
+            text = md_file.read_text(encoding="utf-8", errors="replace")
+            in_response = False
+            resp_lines: list = []
+            for line in text.splitlines():
+                if line.startswith("# Cron Job:"):
+                    job_name = line[len("# Cron Job:"):].strip()
+                elif line.strip() == "## Response":
+                    in_response = True
+                elif in_response and line.startswith("## "):
+                    break
+                elif in_response:
+                    resp_lines.append(line)
+            raw = "\n".join(resp_lines).strip()
+            snippet = raw[:300] if len(raw) > 300 else raw
+        except OSError:
+            pass
+        return job_name, snippet
+
+    def _latest_output_for_job(job_id, output_dir):
+        """Return (mtime, md_file_path) of the most recent output for job_id."""
+        job_dir = output_dir / job_id
+        if not job_dir.exists():
+            return 0.0, None
+        best_mt, best_f = 0.0, None
+        for f in job_dir.iterdir():
+            if not f.name.endswith(".md"):
+                continue
+            try:
+                mt = f.stat().st_mtime
+                if mt > best_mt:
+                    best_mt, best_f = mt, f
+            except OSError:
+                pass
+        return best_mt, best_f
+
     try:
-        from cron.jobs import list_jobs
+        from cron.jobs import list_jobs, OUTPUT_DIR
 
         jobs = list_jobs(include_disabled=True)
         completions = []
+        seen_job_ids: set = set()
         for job in jobs:
             last_run = job.get("last_run_at")
             if not last_run:
@@ -4447,14 +4528,50 @@ def _handle_cron_recent(handler, parsed):
             else:
                 ts = float(last_run)
             if ts > since:
+                job_id = job.get("id", "")
+                seen_job_ids.add(job_id)
+                _, md_f = _latest_output_for_job(job_id, OUTPUT_DIR)
+                _, snippet = _read_output_file(md_f) if md_f else ("", "")
                 completions.append(
                     {
-                        "job_id": job.get("id", ""),
+                        "job_id": job_id,
                         "name": job.get("name", "Unknown"),
                         "status": job.get("last_status", "unknown"),
                         "completed_at": ts,
+                        "snippet": snippet,
                     }
                 )
+
+        # One-time cron jobs are deleted from jobs.json after running, so
+        # list_jobs() cannot find them.  Scan the output directory for recently
+        # written .md files as a reliable fallback evidence of completion.
+        try:
+            if OUTPUT_DIR.exists():
+                for job_dir in OUTPUT_DIR.iterdir():
+                    if not job_dir.is_dir():
+                        continue
+                    job_id = job_dir.name
+                    if job_id in seen_job_ids:
+                        continue
+                    latest_ts, latest_f = _latest_output_for_job(job_id, OUTPUT_DIR)
+                    if latest_ts <= since or latest_f is None:
+                        continue
+                    latest_name, snippet = _read_output_file(latest_f)
+                    if not latest_name:
+                        latest_name = job_id
+                    seen_job_ids.add(job_id)
+                    completions.append(
+                        {
+                            "job_id": job_id,
+                            "name": latest_name,
+                            "status": "ok",
+                            "completed_at": latest_ts,
+                            "snippet": snippet,
+                        }
+                    )
+        except OSError:
+            pass
+
         return j(handler, {"completions": completions, "since": since})
     except ImportError:
         return j(handler, {"completions": [], "since": since})
@@ -5048,6 +5165,111 @@ def _handle_cron_resume(handler, body):
     if result:
         return j(handler, {"ok": True, "job": result})
     return bad(handler, "Job not found", 404)
+
+
+def _handle_cron_deliver_to_chat(handler, body):
+    """Create a chat session containing the cron job output for local delivery.
+
+    Called from the browser after detecting a cron completion so the user sees
+    the result inside the normal chat UI rather than an ephemeral toast.
+    """
+    import re as _re
+    import time as _time
+
+    job_id = body.get("job_id", "")
+    if not job_id:
+        return bad(handler, "job_id required")
+    if not _re.fullmatch(r"[A-Za-z0-9_-][A-Za-z0-9_.-]{0,63}", job_id) or job_id in (".", ".."):
+        return bad(handler, "invalid job_id")
+
+    try:
+        from cron.jobs import OUTPUT_DIR
+    except ImportError:
+        return bad(handler, "cron module not available", 503)
+
+    job_dir = OUTPUT_DIR / job_id
+    if not job_dir.exists():
+        return bad(handler, "no output found for this job_id", 404)
+
+    # Find the most recent output file.
+    latest_file = None
+    latest_mtime = 0.0
+    for f in job_dir.iterdir():
+        if not f.name.endswith(".md"):
+            continue
+        try:
+            mt = f.stat().st_mtime
+            if mt > latest_mtime:
+                latest_mtime, latest_file = mt, f
+        except OSError:
+            pass
+
+    if not latest_file:
+        return bad(handler, "output file not found", 404)
+
+    try:
+        text = latest_file.read_text(encoding="utf-8", errors="replace")
+    except OSError:
+        return bad(handler, "cannot read output file", 500)
+
+    # Parse the cron output markdown format.
+    job_name = job_id
+    prompt_lines: list = []
+    response_lines: list = []
+    in_section = None
+    skip_system_prompt = False
+
+    for line in text.splitlines():
+        if line.startswith("# Cron Job:"):
+            job_name = line[len("# Cron Job:"):].strip()
+        elif line.strip() == "## Prompt":
+            in_section = "prompt"
+            skip_system_prompt = True
+        elif line.strip() == "## Response":
+            in_section = "response"
+            skip_system_prompt = False
+        elif line.startswith("## "):
+            in_section = None
+            skip_system_prompt = False
+        elif in_section == "prompt":
+            # Skip the injected [IMPORTANT: ...] system instruction block.
+            if skip_system_prompt and line.startswith("[IMPORTANT:"):
+                skip_system_prompt = False
+                continue
+            if not skip_system_prompt:
+                prompt_lines.append(line)
+        elif in_section == "response":
+            response_lines.append(line)
+
+    prompt_text = "\n".join(prompt_lines).strip()
+    response_text = "\n".join(response_lines).strip()
+
+    if not response_text:
+        return bad(handler, "no response content found in output file", 404)
+
+    # Create a new session with the cron output as a conversation.
+    # source_tag "cron" would hide it from the sidebar, so use "cron-result".
+    from api.models import new_session
+
+    s = new_session(
+        workspace=body.get("workspace") or None,
+        model=body.get("model") or None,
+        model_provider=body.get("model_provider") or None,
+        profile=body.get("profile") or None,
+    )
+    s.title = job_name or "定时任务结果"
+    s.source_tag = "cron-result"
+    s.session_source = "cron-result"
+    s.source_label = job_name or "定时任务结果"
+    s.llm_title_generated = True
+
+    now = _time.time()
+    if prompt_text:
+        s.messages.append({"role": "user", "content": prompt_text, "timestamp": now})
+    s.messages.append({"role": "assistant", "content": response_text, "timestamp": now + 0.001})
+    s.save()
+
+    return j(handler, {"session_id": s.session_id, "title": s.title})
 
 
 def _handle_file_delete(handler, body):

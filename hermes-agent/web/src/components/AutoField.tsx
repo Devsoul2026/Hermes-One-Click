@@ -2,7 +2,6 @@ import { Select, SelectOption } from "@nous-research/ui/ui/components/select";
 import { Switch } from "@nous-research/ui/ui/components/switch";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { useI18n } from "@/i18n";
 
 function FieldHint({ schema, schemaKey }: { schema: Record<string, unknown>; schemaKey: string }) {
   const keyPath = schemaKey.includes(".") ? schemaKey : "";
@@ -24,7 +23,6 @@ export function AutoField({
   value,
   onChange,
 }: AutoFieldProps) {
-  const { t } = useI18n();
   const rawLabel = schemaKey.split(".").pop() ?? schemaKey;
   const label = rawLabel.replace(/_/g, " ").replace(/\b\w/g, (c) => c.toUpperCase());
 
@@ -49,7 +47,7 @@ export function AutoField({
         <Select value={String(value ?? "")} onValueChange={(v) => onChange(v)}>
           {options.map((opt) => (
             <SelectOption key={opt} value={opt}>
-              {opt || t.common.none}
+              {opt || "(none)"}
             </SelectOption>
           ))}
         </Select>
@@ -110,7 +108,7 @@ export function AutoField({
                 .filter(Boolean),
             )
           }
-          placeholder={t.common.commaSeparatedValues}
+          placeholder="comma-separated values"
         />
       </div>
     );

@@ -655,12 +655,35 @@ def generate_title_raw_via_agent(agent, user_text: str, assistant_text: str) -> 
                         if 'max_output_tokens' in codex_kwargs:
                             codex_kwargs['max_output_tokens'] = max_tokens
                         resp = agent._run_codex_stream(codex_kwargs)
-                        assistant_message, _ = agent._normalize_codex_response(resp)
+                        # _normalize_codex_response moved to agent/codex_responses_adapter.py
+                        # in hermes-agent >= 0.13.0 (no longer a method on AIAgent).
+                        try:
+                            from agent.codex_responses_adapter import _normalize_codex_response as _norm_codex
+                        except ImportError:
+                            _norm_codex = getattr(agent, '_normalize_codex_response', None)
+                        if _norm_codex:
+                            assistant_message, _ = _norm_codex(resp)
+                        else:
+                            from types import SimpleNamespace
+                            out_text = getattr(resp, 'output_text', '') or ''
+                            assistant_message = SimpleNamespace(content=out_text)
                         raw = (assistant_message.content or '') if assistant_message else ''
                         if not raw:
                             empty_status = 'llm_empty'
                     elif getattr(agent, 'api_mode', '') == 'anthropic_messages':
-                        from agent.anthropic_adapter import build_anthropic_kwargs, normalize_anthropic_response
+                        from agent.anthropic_adapter import build_anthropic_kwargs
+                        try:
+                            from agent.anthropic_adapter import normalize_anthropic_response as _norm_ant
+                        except ImportError:
+                            # normalize_anthropic_response removed in hermes-agent >= 0.13.0;
+                            # parse the Anthropic SDK Message object directly.
+                            def _norm_ant(resp, strip_tool_prefix=False):  # type: ignore[misc]
+                                from types import SimpleNamespace
+                                content = ""
+                                for block in (getattr(resp, "content", None) or []):
+                                    if getattr(block, "type", None) == "text":
+                                        content += (block.text or "")
+                                return SimpleNamespace(content=content, role="assistant", tool_calls=[]), {}
                         ant_kwargs = build_anthropic_kwargs(
                             model=agent.model,
                             messages=api_messages,
@@ -672,7 +695,7 @@ def generate_title_raw_via_agent(agent, user_text: str, assistant_text: str) -> 
                             base_url=getattr(agent, '_anthropic_base_url', None),
                         )
                         resp = agent._anthropic_messages_create(ant_kwargs)
-                        assistant_message, _ = normalize_anthropic_response(
+                        assistant_message, _ = _norm_ant(
                             resp, strip_tool_prefix=getattr(agent, '_is_anthropic_oauth', False)
                         )
                         raw = (assistant_message.content or '') if assistant_message else ''
@@ -1718,7 +1741,12 @@ def _run_agent_streaming(
                     # Fallback: poll for pending approval in case notify_cb wasn't
                     # registered (e.g. older approval module without gateway support).
                     try:
-                        from tools.approval import has_pending as _has_pending, _pending, _lock
+                        from tools.approval import _pending, _lock
+                        # has_pending renamed to has_blocking_approval in hermes-agent >= 0.13.0
+                        try:
+                            from tools.approval import has_blocking_approval as _has_pending
+                        except ImportError:
+                            from tools.approval import has_pending as _has_pending  # type: ignore[no-redef]
                         if _has_pending(session_id):
                             with _lock:
                                 p = dict(_pending.get(session_id, {}))

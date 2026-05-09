@@ -2,7 +2,7 @@
 ; Compile from repo root or packaging\windows; staging path is relative to this .iss file.
 
 #define MyAppName "Hermes One-Click"
-#define MyAppVersion "0.7.0"
+#define MyAppVersion "0.8.0"
 #define MyAppPublisher "Devsoul"
 
 [Setup]

@@ -700,9 +700,17 @@ def apply_onboarding_setup(body: dict) -> dict:
         os.environ[provider_meta["env_var"]] = api_key
 
     try:
-        # hermes_cli may cache config at import time; ask it to reload if possible.
-        from hermes_cli.config import reload as _cli_reload
-        _cli_reload()
+        # hermes_cli caches load_config() results; bust the cache so the next
+        # streaming call picks up the newly saved API key.
+        # hermes-agent 0.13.0 removed the public `reload` helper; clear the
+        # internal cache dict directly instead.
+        from hermes_cli import config as _hcfg
+        _cache = getattr(_hcfg, '_LOAD_CONFIG_CACHE', None)
+        if _cache is not None:
+            _cache.clear()
+        _raw_cache = getattr(_hcfg, '_RAW_CONFIG_CACHE', None)
+        if _raw_cache is not None:
+            _raw_cache.clear()
     except Exception:
         logger.debug("Failed to reload hermes_cli config")
 

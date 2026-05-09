@@ -360,6 +360,12 @@ Invoke-RobocopyCopy $srcWebui $dstWebui @(
   ".git", "__pycache__", ".venv", "venv", "node_modules", "tests"
 )
 
+# Write current One-Click version into the staged webui so the update checker
+# knows what is installed. Bump $OcVersion when releasing a new build.
+$OcVersion = "0.7.0"
+"OC_VERSION = '$OcVersion'" | Set-Content -Path (Join-Path $dstWebui "api\_oc_version.py") -Encoding utf8
+Write-Host "Wrote OC version $OcVersion -> api/_oc_version.py"
+
 Write-Host "Copy launcher templates..."
 $dstLauncher = Join-Path $StagingRoot "launcher"
 New-Item -ItemType Directory -Force -Path $dstLauncher | Out-Null

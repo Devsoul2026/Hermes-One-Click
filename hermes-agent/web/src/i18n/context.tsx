@@ -1,11 +1,4 @@
-import {
-  createContext,
-  useContext,
-  useState,
-  useCallback,
-  useEffect,
-  type ReactNode,
-} from "react";
+import { createContext, useContext, useState, useCallback, type ReactNode } from "react";
 import type { Locale, Translations } from "./types";
 import { en } from "./en";
 import { zh } from "./zh";
@@ -52,11 +45,6 @@ export function I18nProvider({ children }: { children: ReactNode }) {
     setLocale,
     t: TRANSLATIONS[locale],
   };
-
-  useEffect(() => {
-    document.documentElement.lang = locale === "zh" ? "zh-CN" : "en";
-    document.documentElement.setAttribute("data-locale", locale);
-  }, [locale]);
 
   return (
     <I18nContext.Provider value={value}>

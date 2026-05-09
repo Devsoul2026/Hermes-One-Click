@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import contextlib
 import importlib
+import json
 import logging
 import os
 import signal
@@ -13,6 +14,90 @@ from pathlib import Path
 from typing import Any, Dict, Iterator
 
 logger = logging.getLogger(__name__)
+
+
+# ---------------------------------------------------------------------------
+# Windows-compatible PID liveness check
+# ---------------------------------------------------------------------------
+# msvcrt.locking() (used by gateway/status.py) is a *per-process* CRT lock.
+# Microsoft docs: "It does not protect against access by other processes."
+# This means get_running_pid() always returns None in the WebUI process on
+# Windows even when the gateway is alive.  We add a direct lock-file fallback.
+
+def _pid_is_alive(pid: int) -> bool:
+    """Return True when *pid* is a live OS process."""
+    try:
+        import psutil  # type: ignore[import]
+        return psutil.pid_exists(int(pid))
+    except Exception:
+        pass
+    if sys.platform == "win32":
+        try:
+            import ctypes
+            kernel32 = ctypes.windll.kernel32  # type: ignore[attr-defined]
+            kernel32.OpenProcess.restype = ctypes.c_void_p
+            kernel32.WaitForSingleObject.restype = ctypes.c_uint
+            kernel32.GetLastError.restype = ctypes.c_uint
+            PROCESS_QUERY_LIMITED_INFORMATION = 0x1000
+            SYNCHRONIZE = 0x100000
+            WAIT_TIMEOUT = 0x00000102
+            ERROR_ACCESS_DENIED = 5
+            handle = kernel32.OpenProcess(
+                PROCESS_QUERY_LIMITED_INFORMATION | SYNCHRONIZE, False, int(pid)
+            )
+            if not handle:
+                return kernel32.GetLastError() == ERROR_ACCESS_DENIED
+            try:
+                return kernel32.WaitForSingleObject(handle, 0) == WAIT_TIMEOUT
+            finally:
+                kernel32.CloseHandle(handle)
+        except Exception:
+            pass
+        return False
+    # POSIX fallback
+    try:
+        os.kill(int(pid), 0)
+        return True
+    except ProcessLookupError:
+        return False
+    except PermissionError:
+        return True  # Process exists but we lack permission
+
+
+def _get_gateway_pid_from_lock_file(home: Path) -> int | None:
+    """Read gateway PID directly from the lock file JSON without relying on
+    msvcrt.locking, which is per-process and cannot detect cross-process locks.
+    Returns the PID if the lock file contains a valid gateway record AND the
+    process is alive.
+    """
+    for fname in ("gateway.lock", "gateway.pid"):
+        lock_path = home / fname
+        if not lock_path.exists():
+            continue
+        try:
+            raw = lock_path.read_text(encoding="utf-8", errors="replace").strip()
+            if not raw:
+                continue
+            try:
+                record = json.loads(raw)
+            except json.JSONDecodeError:
+                try:
+                    record = {"pid": int(raw)}
+                except ValueError:
+                    continue
+            if not isinstance(record, dict):
+                continue
+            pid = int(record.get("pid") or 0)
+            if pid <= 0:
+                continue
+            kind = record.get("kind", "")
+            if kind and kind != "hermes-gateway":
+                continue
+            if _pid_is_alive(pid):
+                return pid
+        except Exception as exc:
+            logger.debug("gateway lock-file check failed for %s: %s", lock_path, exc)
+    return None
 
 
 def _is_path_under(path: str | None, root: Path) -> bool:
@@ -115,6 +200,20 @@ def try_restart_gateway() -> Dict[str, Any]:
             os.environ.pop("HERMES_HOME", None)
 
     if not pid:
+        # Fallback: msvcrt.locking() on Windows is per-process and cannot detect
+        # locks held by other processes.  Read the lock/pid file directly and
+        # verify the PID is alive — this works regardless of OS locking semantics.
+        for home in homes_list:
+            fallback_pid = _get_gateway_pid_from_lock_file(home)
+            if fallback_pid:
+                logger.debug(
+                    "gateway restart: found via lock-file fallback (home=%s, pid=%s)",
+                    home, fallback_pid,
+                )
+                pid = fallback_pid
+                break
+
+    if not pid:
         return {"restarted": False, "reason": "not_running"}
 
     sig = getattr(signal, "SIGUSR1", None)
@@ -138,6 +237,7 @@ def get_gateway_status_dict() -> Dict[str, Any]:
     """Return whether the Hermes gateway daemon is running for the active profile."""
     prev = os.environ.get("HERMES_HOME")
     pid = None
+    homes: list[Path] = []
     try:
         gateway_status = _gateway_status_module()
 
@@ -170,6 +270,18 @@ def get_gateway_status_dict() -> Dict[str, Any]:
 
     if pid:
         return {"running": True, "pid": int(pid)}
+
+    # Fallback: msvcrt.locking() on Windows is per-process and cannot detect
+    # locks held by other processes.  Read the lock/pid file directly and
+    # verify the PID is alive — this works regardless of OS locking semantics.
+    if not homes:
+        homes = _candidate_hermes_homes_for_gateway()
+    for home in homes:
+        fallback_pid = _get_gateway_pid_from_lock_file(home)
+        if fallback_pid:
+            logger.debug("gateway status: found via lock-file fallback (home=%s, pid=%s)", home, fallback_pid)
+            return {"running": True, "pid": int(fallback_pid)}
+
     return {"running": False, "pid": None}
 
 
@@ -215,6 +327,12 @@ def try_start_gateway() -> Dict[str, Any]:
             os.environ["HERMES_HOME"] = prev
         else:
             os.environ.pop("HERMES_HOME", None)
+
+    # Fallback: also check via direct lock-file inspection (Windows msvcrt.locking
+    # is per-process and won't detect cross-process locks in get_running_pid).
+    for home in homes:
+        if _get_gateway_pid_from_lock_file(home):
+            return {"started": False, "reason": "already_running"}
 
     hermes_home = str(homes[0])
     home_path = Path(hermes_home)

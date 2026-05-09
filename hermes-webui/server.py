@@ -6,6 +6,7 @@ All business logic lives in api/*.
 import logging
 import socket
 import sys
+import threading
 import time
 import traceback
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
@@ -171,6 +172,14 @@ def main() -> None:
 
     sync_bundled_skills(quiet=False)
 
+    # Apply One-Click runtime patches (inject SkillhubChinaSource etc.)
+    # Must run after verify_hermes_imports() so hermes-agent is on sys.path.
+    try:
+        from api.patches import apply_patches
+        apply_patches()
+    except Exception as e:
+        print(f'[!!] WARNING: One-Click patches failed to apply: {e}', flush=True)
+
     STATE_DIR.mkdir(parents=True, exist_ok=True)
     SESSION_DIR.mkdir(parents=True, exist_ok=True)
     DEFAULT_WORKSPACE.mkdir(parents=True, exist_ok=True)
@@ -187,6 +196,38 @@ def main() -> None:
         start_watcher()
     except Exception as e:
         print(f'[!!] WARNING: Gateway watcher failed to start: {e}', flush=True)
+
+    # Auto-start the gateway process in the background so it is already running
+    # when the user opens the browser window.  Uses a daemon thread so it never
+    # blocks server startup or shutdown.
+    def _gateway_autostart_worker() -> None:
+        import time as _time
+        _time.sleep(2)  # brief pause so server finishes binding before we import gateway modules
+        try:
+            from api.gateway_restart import get_gateway_status_dict, try_start_gateway
+            if get_gateway_status_dict().get('running'):
+                print('[ok] Gateway: already running, skip auto-start.', flush=True)
+                return
+            print('[..] Gateway: auto-starting...', flush=True)
+            result = try_start_gateway()
+            reason = result.get('reason', '')
+            if result.get('started'):
+                if result.get('pending'):
+                    print(f"[ok] Gateway: spawned (PID pending). Log: {result.get('log')}", flush=True)
+                else:
+                    print(f"[ok] Gateway: started, PID={result.get('pid')}.", flush=True)
+            elif reason == 'already_running':
+                print('[ok] Gateway: already running.', flush=True)
+            elif reason == 'agent_not_found':
+                print('[!!] Gateway auto-start skipped: agent not found.', flush=True)
+            else:
+                detail = result.get('detail') or ''
+                print(f'[!!] Gateway auto-start failed: {reason} {detail}'.rstrip(), flush=True)
+        except Exception as _exc:
+            print(f'[!!] Gateway auto-start error: {_exc}', flush=True)
+
+    _gw_t = threading.Thread(target=_gateway_autostart_worker, daemon=True, name='gateway-autostart')
+    _gw_t.start()
 
     httpd = QuietHTTPServer((HOST, PORT), Handler)
 

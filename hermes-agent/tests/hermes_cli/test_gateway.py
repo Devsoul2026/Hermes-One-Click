@@ -53,6 +53,43 @@ def test_run_gateway_exits_nonzero_when_start_gateway_reports_failure(monkeypatc
     assert calls == [(True, None)]
 
 
+def test_run_gateway_refuses_root_in_official_docker(monkeypatch, tmp_path, capsys):
+    project_root = tmp_path / "opt" / "hermes"
+    (project_root / "docker").mkdir(parents=True)
+    (project_root / "docker" / "entrypoint.sh").write_text("#!/bin/sh\n")
+
+    monkeypatch.setattr(gateway, "PROJECT_ROOT", project_root)
+    monkeypatch.setattr(gateway.os, "geteuid", lambda: 0)
+    monkeypatch.delenv("HERMES_ALLOW_ROOT_GATEWAY", raising=False)
+    monkeypatch.setattr(gateway, "_is_official_docker_checkout", lambda: True)
+
+    with pytest.raises(SystemExit) as exc_info:
+        gateway.run_gateway()
+
+    assert exc_info.value.code == 1
+    out = capsys.readouterr().out
+    assert "Refusing to run the Hermes gateway as root" in out
+    assert "/opt/hermes/docker/entrypoint.sh" in out
+
+
+def test_run_gateway_root_guard_has_escape_hatch(monkeypatch):
+    calls = []
+
+    def fake_start_gateway(*, replace, verbosity):
+        calls.append((replace, verbosity))
+        return object()
+
+    _install_fake_gateway_run(monkeypatch, fake_start_gateway)
+    monkeypatch.setattr(gateway.asyncio, "run", lambda coro: True)
+    monkeypatch.setattr(gateway.os, "geteuid", lambda: 0)
+    monkeypatch.setattr(gateway, "_is_official_docker_checkout", lambda: True)
+    monkeypatch.setenv("HERMES_ALLOW_ROOT_GATEWAY", "1")
+
+    gateway.run_gateway(verbose=2, replace=True)
+
+    assert calls == [(True, 2)]
+
+
 class TestSystemdLingerStatus:
     def test_reports_enabled(self, monkeypatch):
         monkeypatch.setattr(gateway, "is_linux", lambda: True)
@@ -310,6 +347,10 @@ def test_find_gateway_pids_falls_back_to_pid_file_when_process_scan_fails(monkey
     def fake_run(cmd, **kwargs):
         if cmd[:4] == ["ps", "-A", "eww", "-o"]:
             return SimpleNamespace(returncode=1, stdout="", stderr="ps failed")
+        if cmd[:3] == ["ps", "-o", "ppid="]:
+            # _get_ancestor_pids() walks up the tree; return "no parent" so
+            # the loop terminates cleanly.
+            return SimpleNamespace(returncode=1, stdout="", stderr="")
         raise AssertionError(f"Unexpected command: {cmd}")
 
     monkeypatch.setattr(gateway.subprocess, "run", fake_run)
@@ -409,13 +450,20 @@ class TestWaitForGatewayExit:
 
 class TestStopProfileGateway:
     def test_stop_profile_gateway_keeps_pid_file_when_process_still_running(self, monkeypatch):
-        calls = {"kill": 0, "remove": 0}
+        calls = {"kill": 0, "alive_probes": 0, "remove": 0}
 
         monkeypatch.setattr("gateway.status.get_running_pid", lambda: 12345)
+        # Post-#21561: the stop loop sends one SIGTERM via ``os.kill`` then
+        # polls liveness via ``gateway.status._pid_exists`` (safe on
+        # Windows — bpo-14484). Instrument both seams separately.
         monkeypatch.setattr(
             gateway.os,
             "kill",
             lambda pid, sig: calls.__setitem__("kill", calls["kill"] + 1),
+        )
+        monkeypatch.setattr(
+            "gateway.status._pid_exists",
+            lambda pid: calls.__setitem__("alive_probes", calls["alive_probes"] + 1) or True,
         )
         monkeypatch.setattr("time.sleep", lambda _: None)
         monkeypatch.setattr(
@@ -424,5 +472,6 @@ class TestStopProfileGateway:
         )
 
         assert gateway.stop_profile_gateway() is True
-        assert calls["kill"] == 21
+        assert calls["kill"] == 1          # one SIGTERM
+        assert calls["alive_probes"] == 20 # 20 liveness polls over the 2s window
         assert calls["remove"] == 0

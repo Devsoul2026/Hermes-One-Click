@@ -49,8 +49,8 @@ export default function PluginsPage() {
         setMemorySel(p.memory_provider ? p.memory_provider : MEMORY_PROVIDER_BUILTIN);
         setContextSel(p.context_engine || "compressor");
       })
-      .catch(() => showToast(t.pluginsPage.loadHubFailed, "error"));
-  }, [showToast, t.pluginsPage.loadHubFailed]);
+      .catch(() => showToast(t.common.loading, "error"));
+  }, [showToast, t.common.loading]);
 
   useEffect(() => {
     setLoading(true);
@@ -86,23 +86,14 @@ export default function PluginsPage() {
         force: installForce,
         enable: installEnable,
       });
-      showToast(
-        t.pluginsPage.pluginInstalled.replace(
-          "{name}",
-          String(r.plugin_name ?? id),
-        ),
-        "success",
-      );
+      showToast(`${r.plugin_name ?? id} installed`, "success");
       if ((r.warnings?.length ?? 0) > 0) showToast(r.warnings!.join(" "), "error");
       if ((r.missing_env?.length ?? 0) > 0)
         showToast(`${t.pluginsPage.missingEnvWarn} ${r.missing_env!.join(", ")}`, "error");
       setInstallId("");
       await loadHub();
     } catch (e) {
-      showToast(
-        e instanceof Error ? e.message : t.common.installFailed,
-        "error",
-      );
+      showToast(e instanceof Error ? e.message : "Install failed", "error");
     } finally {
       setInstallBusy(false);
     }
@@ -118,10 +109,7 @@ export default function PluginsPage() {
       );
       await loadHub();
     } catch (e) {
-      showToast(
-        e instanceof Error ? e.message : t.common.rescanFailed,
-        "error",
-      );
+      showToast(e instanceof Error ? e.message : "Rescan failed", "error");
     } finally {
       setRescanBusy(false);
     }
@@ -138,10 +126,7 @@ export default function PluginsPage() {
       showToast(t.pluginsPage.savedProviders, "success");
       await loadHub();
     } catch (e) {
-      showToast(
-        e instanceof Error ? e.message : t.common.saveFailed,
-        "error",
-      );
+      showToast(e instanceof Error ? e.message : "Save failed", "error");
     } finally {
       setProviderBusy(false);
     }
@@ -254,7 +239,7 @@ export default function PluginsPage() {
               <Input
                 className="normal-case font-sans lowercase"
                 id="install-url"
-                placeholder={t.pluginsPage.installUrlPlaceholder}
+                placeholder="owner/repo or https://..."
                 spellCheck={false}
                 value={installId}
                 onChange={(e) => setInstallId(e.target.value)}

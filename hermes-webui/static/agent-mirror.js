@@ -1,249 +1,247 @@
-/* Hermes agent version vs domestic Git mirror — modal + periodic notify */
+/* Hermes One-Click self-update: version check, download progress, installer launch */
 
-async function _agentMirrorStatusFetchQuiet() {
-  try {
-    const href = new URL('api/agent/mirror-status', document.baseURI || location.href).href;
-    const res = await fetch(href, { credentials: 'include' });
-    if (res.status === 401) return null;
-    if (!res.ok) return null;
-    return res.json();
-  } catch (_) {
-    return null;
-  }
-}
+let _ocDownloadId = null;
+let _ocPollTimer = null;
 
-function _agentEsc(s) {
+function _ocEsc(s) {
   const d = document.createElement('div');
   d.textContent = s == null ? '' : String(s);
   return d.innerHTML;
 }
 
-function _syncTitlebarAgentSemver(data) {
-  const el = document.getElementById('titlebarAgentSemver');
-  if (!el) return;
-  if (data && data.ok && data.agent_found && data.package_version) {
-    el.textContent = ' \u00b7 ' + data.package_version;
-    el.removeAttribute('hidden');
-    el.setAttribute('aria-hidden', 'false');
-  } else {
-    el.textContent = '';
-    el.setAttribute('hidden', 'hidden');
-    el.setAttribute('aria-hidden', 'true');
+// ── Version check ────────────────────────────────────────────────────────────
+
+async function _checkOcUpdate() {
+  try {
+    const data = await api('/api/oc/update-check');
+    if (!data) return;
+
+    // Update button badge
+    const btn = document.getElementById('btnViewAgentVersion');
+    const semverEl = document.getElementById('titlebarAgentSemver');
+    if (semverEl && data.current) {
+      semverEl.textContent = ' · v' + data.current;
+      semverEl.removeAttribute('hidden');
+      semverEl.setAttribute('aria-hidden', 'false');
+    }
+    if (btn) {
+      if (data.update_available) {
+        btn.classList.add('has-update');
+      } else {
+        btn.classList.remove('has-update');
+      }
+    }
+
+    // Notify once per latest version
+    if (data.update_available && data.latest) {
+      const seenKey = 'hermes-oc-update-seen-' + data.latest;
+      if (!localStorage.getItem(seenKey)) {
+        localStorage.setItem(seenKey, '1');
+        if (typeof showToast === 'function') {
+          showToast(
+            (typeof t === 'function' ? t('oc_update_available_toast') : '新版本可用') +
+            ' v' + data.latest,
+            8000,
+            'warning'
+          );
+        }
+      }
+    }
+  } catch (e) {
+    // silent — version check is best-effort
   }
 }
 
-function _agentVersionPackageRow(pv) {
-  if (!pv) return '';
-  return (
-    '<div class="agent-version-row agent-version-package"><strong>' +
-    _agentEsc(t('agent_version_release_label')) +
-    '</strong> <code>' +
-    _agentEsc(pv) +
-    '</code></div>'
-  );
-}
-
-function _fillAgentVersionModal(data) {
-  const body = typeof $ === 'function' ? $('agentVersionBody') : null;
-  const status = typeof $ === 'function' ? $('agentVersionStatus') : null;
-  const btnUp = typeof $ === 'function' ? $('btnAgentMirrorUpdate') : null;
-  const titleBtn = document.getElementById('btnViewAgentVersion');
-  if (status) status.textContent = '';
-  if (!body) return;
-  if (!data || !data.ok) {
-    const msg = data && data.error ? data.error : 'unknown';
-    body.innerHTML = '<p>' + _agentEsc(t('agent_version_error').replace('{msg}', msg)) + '</p>';
-    if (btnUp) btnUp.style.display = 'none';
-    if (titleBtn) titleBtn.classList.remove('has-update');
-    _syncTitlebarAgentSemver(null);
-    return;
-  }
-  let html = '';
-  if (!data.agent_found) {
-    html = '<p>' + _agentEsc(t('agent_version_no_agent')) + '</p>';
-    if (btnUp) btnUp.style.display = 'none';
-    if (titleBtn) titleBtn.classList.remove('has-update');
-  } else if (data.git_repo === false) {
-    html = _agentVersionPackageRow(data.package_version);
-    html +=
-      '<div class="agent-version-row"><strong>' +
-      _agentEsc(t('agent_version_local_label')) +
-      '</strong> <code>' +
-      _agentEsc(data.local_version || '') +
-      '</code></div>';
-    html += '<p style="margin-top:12px">' + _agentEsc(t('agent_version_no_git')) + '</p>';
-    if (btnUp) btnUp.style.display = 'none';
-  } else {
-    const localLabel = data.package_version ? t('agent_version_git_label') : t('agent_version_local_label');
-    html = _agentVersionPackageRow(data.package_version);
-    html +=
-      '<div class="agent-version-row"><strong>' +
-      _agentEsc(localLabel) +
-      '</strong> <code>' +
-      _agentEsc(data.local_version || '') +
-      '</code> <span>(' +
-      _agentEsc(data.local_sha || '') +
-      ')</span></div>';
-    html +=
-      '<div class="agent-version-row"><strong>' +
-      _agentEsc(t('agent_version_mirror_label')) +
-      '</strong> <code>' +
-      _agentEsc(data.mirror_short || '') +
-      '</code></div>';
-    html +=
-      '<div class="agent-version-row"><strong>' +
-      _agentEsc(t('agent_version_branch')) +
-      '</strong> ' +
-      _agentEsc(data.mirror_branch || '') +
-      '</div>';
-    html +=
-      '<div class="agent-version-row"><strong>' +
-      _agentEsc(t('agent_version_path')) +
-      '</strong> <span class="agent-version-mirror-url">' +
-      _agentEsc(data.agent_path || '') +
-      '</span></div>';
-    html +=
-      '<div class="agent-version-row"><strong>' +
-      _agentEsc(t('agent_version_mirror_url_label')) +
-      '</strong> <span class="agent-version-mirror-url">' +
-      _agentEsc(data.mirror_url || '') +
-      '</span></div>';
-    if (data.mirror_url_primary && data.mirror_url_primary !== data.mirror_url) {
-      html +=
-        '<p style="margin-top:8px;font-size:11px;color:var(--muted)">' +
-        _agentEsc(t('agent_version_mirror_fallback_note')) +
-        ' <span class="agent-version-mirror-url">' +
-        _agentEsc(data.mirror_url_primary) +
-        '</span></p>';
-    }
-    if (data.fetch_ok === false && data.fetch_error) {
-      html +=
-        '<p style="margin-top:10px;font-size:12px">' +
-        _agentEsc(String(data.fetch_error).slice(0, 220)) +
-        '</p>';
-    }
-    let state = '';
-    if (data.update_available) {
-      state =
-        data.behind > 0
-          ? t('agent_version_behind').replace('{n}', String(data.behind))
-          : t('agent_version_maybe_behind');
-      if (titleBtn) titleBtn.classList.add('has-update');
-      if (btnUp) btnUp.style.display = 'inline-flex';
-    } else {
-      state = t('agent_version_synced');
-      if (titleBtn) titleBtn.classList.remove('has-update');
-      if (btnUp) btnUp.style.display = 'none';
-    }
-    html +=
-      '<p style="margin-top:14px;color:var(--text);font-weight:600">' + _agentEsc(state) + '</p>';
-  }
-  body.innerHTML = html;
-  _syncTitlebarAgentSemver(data);
-}
+// ── Modal ────────────────────────────────────────────────────────────────────
 
 function openAgentVersionModal() {
-  const modal = typeof $ === 'function' ? $('agentVersionModal') : null;
+  const modal = document.getElementById('agentVersionModal');
   if (!modal) return;
   modal.style.display = 'flex';
   modal.setAttribute('aria-hidden', 'false');
   if (typeof applyLocaleToDOM === 'function') applyLocaleToDOM();
-  refreshAgentVersionModal();
+  _renderOcUpdateModal();
 }
 
 function closeAgentVersionModal() {
-  const modal = typeof $ === 'function' ? $('agentVersionModal') : null;
+  const modal = document.getElementById('agentVersionModal');
   if (!modal) return;
   modal.style.display = 'none';
   modal.setAttribute('aria-hidden', 'true');
+  _stopOcPoll();
 }
 
-async function refreshAgentVersionModal() {
-  const status = typeof $ === 'function' ? $('agentVersionStatus') : null;
-  if (status) status.textContent = t('agent_version_loading');
+async function _renderOcUpdateModal() {
+  const body = document.getElementById('agentVersionBody');
+  const status = document.getElementById('agentVersionStatus');
+  const btnUpdate = document.getElementById('btnAgentMirrorUpdate');
+  const btnRefresh = document.getElementById('btnAgentVersionRefresh');
+
+  if (status) status.textContent = typeof t === 'function' ? t('oc_checking') : '检查中…';
+  if (body) body.innerHTML = '';
+  if (btnUpdate) btnUpdate.style.display = 'none';
+
+  let data = null;
   try {
-    const data = await api('/api/agent/mirror-status');
-    _fillAgentVersionModal(data);
+    data = await api('/api/oc/update-check');
   } catch (e) {
-    const body = typeof $ === 'function' ? $('agentVersionBody') : null;
-    if (body) {
-      body.innerHTML =
-        '<p>' +
-        _agentEsc(
-          t('agent_version_error').replace('{msg}', e && e.message ? e.message : String(e)),
-        ) +
-        '</p>';
-    }
-    _syncTitlebarAgentSemver(null);
-  } finally {
+    if (body) body.innerHTML = '<p style="color:var(--error-text,#e55)">' + _ocEsc(String(e && e.message ? e.message : e)) + '</p>';
     if (status) status.textContent = '';
+    return;
   }
+  if (status) status.textContent = '';
+
+  if (!data) return;
+
+  let html = '';
+  html += '<div class="agent-version-row"><strong>' +
+    _ocEsc(typeof t === 'function' ? t('oc_current_version') : '当前版本') +
+    '</strong> <code>v' + _ocEsc(data.current || '—') + '</code></div>';
+
+  if (data.latest) {
+    html += '<div class="agent-version-row"><strong>' +
+      _ocEsc(typeof t === 'function' ? t('oc_latest_version') : '最新版本') +
+      '</strong> <code>v' + _ocEsc(data.latest) + '</code></div>';
+  }
+
+  if (data.error) {
+    html += '<p style="margin-top:10px;font-size:12px;color:var(--muted)">' + _ocEsc(data.error) + '</p>';
+  } else if (data.update_available) {
+    html += '<p style="margin-top:14px;font-weight:600;color:var(--accent)">' +
+      _ocEsc(typeof t === 'function' ? t('oc_update_available') : '发现新版本，点击下方按钮更新') + '</p>';
+    if (data.changelog) {
+      html += '<pre style="margin-top:8px;font-size:11px;white-space:pre-wrap;color:var(--muted);background:var(--code-bg);padding:8px;border-radius:6px;max-height:120px;overflow:auto">' +
+        _ocEsc(data.changelog) + '</pre>';
+    }
+    if (btnUpdate) {
+      btnUpdate.style.display = 'inline-flex';
+      btnUpdate.disabled = false;
+      btnUpdate.textContent = typeof t === 'function' ? t('oc_update_btn') : '立即更新';
+      btnUpdate.dataset.tag = data.tag || '';
+      btnUpdate.dataset.filename = data.filename || '';
+    }
+  } else {
+    html += '<p style="margin-top:14px;font-weight:600">' +
+      _ocEsc(typeof t === 'function' ? t('oc_up_to_date') : '已是最新版本') + '</p>';
+  }
+
+  // Progress bar placeholder (hidden by default)
+  html += '<div id="ocProgressWrap" style="display:none;margin-top:16px">' +
+    '<div style="font-size:12px;color:var(--muted);margin-bottom:6px" id="ocProgressLabel">下载中…</div>' +
+    '<div style="background:var(--border2);border-radius:6px;height:8px;overflow:hidden">' +
+    '<div id="ocProgressBar" style="height:100%;width:0%;background:var(--accent);border-radius:6px;transition:width .3s"></div>' +
+    '</div></div>';
+
+  if (body) body.innerHTML = html;
 }
+
+// ── Download & install ───────────────────────────────────────────────────────
 
 async function applyAgentMirrorUpdate() {
-  const ok = await showConfirmDialog({
-    title: t('agent_version_update_confirm_title'),
-    message: t('agent_version_update_confirm_message'),
-    confirmLabel: t('agent_version_update_btn'),
-    danger: false,
-    focusCancel: true,
-  });
+  const btnUpdate = document.getElementById('btnAgentMirrorUpdate');
+  const tag = btnUpdate && btnUpdate.dataset.tag;
+  const filename = btnUpdate && btnUpdate.dataset.filename;
+
+  if (!tag || !filename) {
+    if (typeof showToast === 'function') showToast(typeof t === 'function' ? t('oc_update_failed') : '更新信息缺失', 4000, 'error');
+    return;
+  }
+
+  const ok = await (typeof showConfirmDialog === 'function'
+    ? showConfirmDialog({
+        title: typeof t === 'function' ? t('oc_confirm_title') : '确认更新',
+        message: typeof t === 'function' ? t('oc_confirm_message') : '将下载最新安装包并自动运行。安装程序启动后，请按提示完成安装。',
+        confirmLabel: typeof t === 'function' ? t('oc_update_btn') : '立即更新',
+        danger: false,
+        focusCancel: true,
+      })
+    : Promise.resolve(true));
   if (!ok) return;
-  const btn = typeof $ === 'function' ? $('btnAgentMirrorUpdate') : null;
-  if (btn) btn.disabled = true;
+
+  if (btnUpdate) { btnUpdate.disabled = true; btnUpdate.textContent = typeof t === 'function' ? t('oc_downloading') : '下载中…'; }
+
   try {
-    const res = await api('/api/agent/mirror-update', { method: 'POST', body: JSON.stringify({}) });
+    const res = await api('/api/oc/update/start', { method: 'POST', body: JSON.stringify({ tag, filename }) });
+    if (!res || !res.download_id) throw new Error('No download_id returned');
+    _ocDownloadId = res.download_id;
+    _startOcPoll();
+  } catch (e) {
+    if (btnUpdate) { btnUpdate.disabled = false; btnUpdate.textContent = typeof t === 'function' ? t('oc_update_btn') : '立即更新'; }
+    if (typeof showToast === 'function') showToast((typeof t === 'function' ? t('oc_update_failed') : '下载启动失败') + ': ' + (e && e.message ? e.message : String(e)), 6000, 'error');
+  }
+}
+
+function _startOcPoll() {
+  _stopOcPoll();
+  _ocPollTimer = setInterval(_pollOcDownload, 800);
+}
+
+function _stopOcPoll() {
+  if (_ocPollTimer) { clearInterval(_ocPollTimer); _ocPollTimer = null; }
+}
+
+async function _pollOcDownload() {
+  if (!_ocDownloadId) return;
+  let data = null;
+  try {
+    data = await api('/api/oc/update/status?id=' + encodeURIComponent(_ocDownloadId));
+  } catch (e) { return; }
+
+  const wrap = document.getElementById('ocProgressWrap');
+  const bar = document.getElementById('ocProgressBar');
+  const label = document.getElementById('ocProgressLabel');
+  const btnUpdate = document.getElementById('btnAgentMirrorUpdate');
+
+  if (data.status === 'downloading' || data.status === 'starting') {
+    if (wrap) wrap.style.display = 'block';
+    if (bar) bar.style.width = (data.percent || 0) + '%';
+    const mb = data.bytes_total ? (data.bytes_total / 1048576).toFixed(1) + ' MB' : '';
+    const done = data.bytes_done ? (data.bytes_done / 1048576).toFixed(1) + ' MB' : '';
+    if (label) label.textContent = (done && mb) ? done + ' / ' + mb : (typeof t === 'function' ? t('oc_downloading') : '下载中…');
+  } else if (data.status === 'ready') {
+    _stopOcPoll();
+    if (wrap) wrap.style.display = 'none';
+    if (bar) bar.style.width = '100%';
+    if (btnUpdate) { btnUpdate.disabled = false; btnUpdate.style.display = 'none'; }
+    _launchOcInstaller();
+  } else if (data.status === 'error') {
+    _stopOcPoll();
+    if (wrap) wrap.style.display = 'none';
+    if (btnUpdate) { btnUpdate.disabled = false; btnUpdate.textContent = typeof t === 'function' ? t('oc_update_btn') : '立即更新'; }
+    if (typeof showToast === 'function') showToast((typeof t === 'function' ? t('oc_download_failed') : '下载失败') + ': ' + (data.error || ''), 6000, 'error');
+  }
+}
+
+async function _launchOcInstaller() {
+  try {
+    const res = await api('/api/oc/update/install', { method: 'POST', body: JSON.stringify({ download_id: _ocDownloadId }) });
     if (res && res.ok) {
-      showToast(res.message || t('agent_version_update_started'), 3800, 'success');
-      if (typeof _waitForServerThenReload === 'function') {
-        await _waitForServerThenReload();
-      } else {
-        location.reload();
-      }
+      if (typeof showToast === 'function') showToast(typeof t === 'function' ? t('oc_installer_launched') : '安装程序已启动，请按提示完成安装', 8000, 'success');
+      closeAgentVersionModal();
     } else {
-      showToast((res && res.message) || t('agent_version_update_failed'), 5000, 'error');
+      if (typeof showToast === 'function') showToast((res && res.message) || (typeof t === 'function' ? t('oc_launch_failed') : '启动安装程序失败'), 6000, 'error');
     }
   } catch (e) {
-    showToast(t('agent_version_update_failed') + (e && e.message ? ' ' + e.message : ''), 5000, 'error');
-  } finally {
-    if (btn) btn.disabled = false;
+    if (typeof showToast === 'function') showToast((typeof t === 'function' ? t('oc_launch_failed') : '启动失败') + ': ' + (e && e.message ? e.message : String(e)), 6000, 'error');
   }
 }
 
-function _pollAgentMirrorBadge() {
-  _agentMirrorStatusFetchQuiet().then((data) => {
-    if (!data || !data.ok) return;
-    const tip = data.mirror_sha || '';
-    const prev = localStorage.getItem('hermes-mirror-toast-tip');
-    if (data.update_available && tip && prev !== tip) {
-      localStorage.setItem('hermes-mirror-toast-tip', tip);
-      if (typeof showToast === 'function') {
-        showToast(t('agent_toast_new_version'), 8000, 'warning');
-      }
-    }
-    const b = document.getElementById('btnViewAgentVersion');
-    if (!b) return;
-    if (data.update_available) b.classList.add('has-update');
-    else b.classList.remove('has-update');
-    _syncTitlebarAgentSemver(data);
-  });
-}
+// ── Polling: check on startup ────────────────────────────────────────────────
 
-(function _initAgentMirrorPoll() {
+(function _initOcUpdatePoll() {
   function go() {
-    _pollAgentMirrorBadge();
-    setInterval(_pollAgentMirrorBadge, 60 * 60 * 1000);
+    _checkOcUpdate();
+    setInterval(_checkOcUpdate, 60 * 60 * 1000);
   }
   if (document.readyState === 'loading') {
-    document.addEventListener('DOMContentLoaded', () => setTimeout(go, 12000));
+    document.addEventListener('DOMContentLoaded', () => setTimeout(go, 10000));
   } else {
-    setTimeout(go, 12000);
+    setTimeout(go, 10000);
   }
 })();
 
 if (typeof window !== 'undefined') {
   window.openAgentVersionModal = openAgentVersionModal;
   window.closeAgentVersionModal = closeAgentVersionModal;
-  window.refreshAgentVersionModal = refreshAgentVersionModal;
   window.applyAgentMirrorUpdate = applyAgentMirrorUpdate;
 }

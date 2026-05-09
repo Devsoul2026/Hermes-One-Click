@@ -3,8 +3,6 @@ import { ListItem } from "@nous-research/ui/ui/components/list-item";
 import { Spinner } from "@nous-research/ui/ui/components/spinner";
 import { Input } from "@/components/ui/input";
 import type { GatewayClient } from "@/lib/gatewayClient";
-import type { Translations } from "@/i18n/types";
-import { useI18n } from "@/i18n";
 import { Check, Search, X } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
 
@@ -72,11 +70,9 @@ export function ModelPickerDialog(props: Props) {
     loader,
     onApply,
     onClose,
-    title: titleProp,
+    title = "Switch Model",
     alwaysGlobal = false,
   } = props;
-  const { t } = useI18n();
-  const title = titleProp ?? t.modelPicker.title;
   const standalone = !!loader && !!onApply;
 
   const [providers, setProviders] = useState<ModelOptionProvider[]>([]);
@@ -198,10 +194,6 @@ export function ModelPickerDialog(props: Props) {
     }
   };
 
-  const currentLine = `${t.modelPicker.currentLine} ${currentModel || t.modelPicker.currentUnknown}${
-    currentProviderSlug ? ` · ${currentProviderSlug}` : ""
-  }`;
-
   return (
     <div
       className="fixed inset-0 z-[100] flex items-center justify-center bg-background/85 backdrop-blur-sm p-4"
@@ -216,7 +208,7 @@ export function ModelPickerDialog(props: Props) {
           size="icon"
           onClick={onClose}
           className="absolute right-2 top-2 text-muted-foreground hover:text-foreground"
-          aria-label={t.modelPicker.closeDialog}
+          aria-label="Close"
         >
           <X />
         </Button>
@@ -229,7 +221,8 @@ export function ModelPickerDialog(props: Props) {
             {title}
           </h2>
           <p className="text-xs text-muted-foreground mt-1 font-mono">
-            {currentLine}
+            current: {currentModel || "(unknown)"}
+            {currentProviderSlug && ` · ${currentProviderSlug}`}
           </p>
         </header>
 
@@ -238,7 +231,7 @@ export function ModelPickerDialog(props: Props) {
             <Search className="absolute left-2 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-muted-foreground" />
             <Input
               autoFocus
-              placeholder={t.modelPicker.filterPlaceholder}
+              placeholder="Filter providers and models…"
               value={query}
               onChange={(e) => setQuery(e.target.value)}
               className="pl-7 h-8 text-sm"
@@ -254,7 +247,6 @@ export function ModelPickerDialog(props: Props) {
             total={providers.length}
             selectedSlug={selectedSlug}
             query={needle}
-            mp={t.modelPicker}
             onSelect={(slug) => {
               setSelectedSlug(slug);
               setSelectedModel("");
@@ -268,10 +260,10 @@ export function ModelPickerDialog(props: Props) {
             selectedModel={selectedModel}
             currentModel={currentModel}
             currentProviderSlug={currentProviderSlug}
-            mp={t.modelPicker}
             onSelect={setSelectedModel}
             onConfirm={(m) => {
               setSelectedModel(m);
+              // Confirm on next tick so state settles.
               window.setTimeout(confirm, 0);
             }}
           />
@@ -280,7 +272,7 @@ export function ModelPickerDialog(props: Props) {
         <footer className="border-t border-border p-3 flex items-center justify-between gap-3 flex-wrap">
           {alwaysGlobal ? (
             <span className="text-xs text-muted-foreground">
-              {t.modelPicker.savesConfigHint}
+              Saves to config.yaml — applies to new sessions.
             </span>
           ) : (
             <label className="flex items-center gap-2 text-xs text-muted-foreground cursor-pointer select-none">
@@ -290,16 +282,16 @@ export function ModelPickerDialog(props: Props) {
                 onChange={(e) => setPersistGlobal(e.target.checked)}
                 className="cursor-pointer"
               />
-              {t.modelPicker.persistGlobal}
+              Persist globally (otherwise this session only)
             </label>
           )}
 
           <div className="flex items-center gap-2 ml-auto">
             <Button outlined onClick={onClose} disabled={applying}>
-              {t.modelPicker.cancel}
+              Cancel
             </Button>
             <Button onClick={confirm} disabled={!canConfirm}>
-              {applying ? <Spinner /> : t.modelPicker.switch}
+              {applying ? <Spinner /> : "Switch"}
             </Button>
           </div>
         </footer>
@@ -308,6 +300,10 @@ export function ModelPickerDialog(props: Props) {
   );
 }
 
+/* ------------------------------------------------------------------ */
+/*  Provider column                                                    */
+/* ------------------------------------------------------------------ */
+
 function ProviderColumn({
   loading,
   error,
@@ -315,7 +311,6 @@ function ProviderColumn({
   total,
   selectedSlug,
   query,
-  mp,
   onSelect,
 }: {
   loading: boolean;
@@ -324,14 +319,13 @@ function ProviderColumn({
   total: number;
   selectedSlug: string;
   query: string;
-  mp: Translations["modelPicker"];
   onSelect(slug: string): void;
 }) {
   return (
     <div className="border-r border-border overflow-y-auto">
       {loading && (
         <div className="flex items-center gap-2 p-4 text-xs text-muted-foreground">
-          <Spinner className="text-xs" /> {mp.loading}
+          <Spinner className="text-xs" /> loading…
         </div>
       )}
 
@@ -340,16 +334,15 @@ function ProviderColumn({
       {!loading && !error && providers.length === 0 && (
         <div className="p-4 text-xs text-muted-foreground italic">
           {query
-            ? mp.noMatches
+            ? "no matches"
             : total === 0
-              ? mp.noAuthenticatedProviders
-              : mp.noMatches}
+              ? "no authenticated providers"
+              : "no matches"}
         </div>
       )}
 
       {providers.map((p) => {
         const active = p.slug === selectedSlug;
-        const n = p.total_models ?? p.models?.length ?? 0;
         return (
           <ListItem
             key={p.slug}
@@ -362,10 +355,10 @@ function ProviderColumn({
             <div className="flex-1 min-w-0">
               <div className="flex items-center gap-1.5">
                 <span className="font-medium truncate">{p.name}</span>
-                {p.is_current && <CurrentTag label={mp.currentTag} />}
+                {p.is_current && <CurrentTag />}
               </div>
               <div className="text-[0.65rem] text-muted-foreground/80 font-mono truncate">
-                {p.slug} · {mp.modelsCount.replace("{count}", String(n))}
+                {p.slug} · {p.total_models ?? p.models?.length ?? 0} models
               </div>
             </div>
           </ListItem>
@@ -375,6 +368,10 @@ function ProviderColumn({
   );
 }
 
+/* ------------------------------------------------------------------ */
+/*  Model column                                                       */
+/* ------------------------------------------------------------------ */
+
 function ModelColumn({
   provider,
   models,
@@ -382,7 +379,6 @@ function ModelColumn({
   selectedModel,
   currentModel,
   currentProviderSlug,
-  mp,
   onSelect,
   onConfirm,
 }: {
@@ -392,7 +388,6 @@ function ModelColumn({
   selectedModel: string;
   currentModel: string;
   currentProviderSlug: string;
-  mp: Translations["modelPicker"];
   onSelect(model: string): void;
   onConfirm(model: string): void;
 }) {
@@ -400,7 +395,7 @@ function ModelColumn({
     return (
       <div className="overflow-y-auto">
         <div className="p-4 text-xs text-muted-foreground italic">
-          {mp.pickProvider}
+          pick a provider →
         </div>
       </div>
     );
@@ -416,7 +411,9 @@ function ModelColumn({
 
       {models.length === 0 ? (
         <div className="p-4 text-xs text-muted-foreground italic">
-          {allModels.length ? mp.noModelsMatchFilter : mp.noModelsForProvider}
+          {allModels.length
+            ? "no models match your filter"
+            : "no models listed for this provider"}
         </div>
       ) : (
         models.map((m) => {
@@ -436,7 +433,7 @@ function ModelColumn({
                 className={`h-3 w-3 shrink-0 ${active ? "text-primary" : "text-transparent"}`}
               />
               <span className="flex-1 truncate">{m}</span>
-              {isCurrent && <CurrentTag label={mp.currentTag} />}
+              {isCurrent && <CurrentTag />}
             </ListItem>
           );
         })
@@ -445,10 +442,10 @@ function ModelColumn({
   );
 }
 
-function CurrentTag({ label }: { label: string }) {
+function CurrentTag() {
   return (
     <span className="text-[0.6rem] uppercase tracking-wider text-primary/80 shrink-0">
-      {label}
+      current
     </span>
   );
 }

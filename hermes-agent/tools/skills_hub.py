@@ -20,7 +20,6 @@ import os
 import re
 import shutil
 import subprocess
-import tempfile
 import time
 from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
@@ -220,7 +219,7 @@ class GitHubAuth:
             key_file = Path(key_path)
             if not key_file.exists():
                 return None
-            private_key = key_file.read_text()
+            private_key = key_file.read_text(encoding="utf-8")
 
             now = int(time.time())
             payload = {
@@ -2319,204 +2318,6 @@ class LobeHubSource(SkillSource):
 
 
 # ---------------------------------------------------------------------------
-# China Skillhub CLI source adapter
-# ---------------------------------------------------------------------------
-
-class SkillhubChinaSource(SkillSource):
-    """Use the China-local Skillhub CLI as the preferred remote skill source."""
-
-    SOURCE_ID = "skillhub-cn"
-
-    def __init__(self, command: str = "skillhub"):
-        self.command = command
-        self.command_path = shutil.which(command)
-        self.is_available = bool(self.command_path)
-
-    def source_id(self) -> str:
-        return self.SOURCE_ID
-
-    def trust_level_for(self, identifier: str) -> str:
-        return "trusted"
-
-    def _run(self, args: List[str], *, cwd: Optional[Path] = None, timeout: int = 60) -> subprocess.CompletedProcess:
-        if not self.command_path:
-            raise FileNotFoundError("skillhub CLI not found")
-        return subprocess.run(
-            [self.command_path, *args],
-            cwd=str(cwd) if cwd else None,
-            capture_output=True,
-            text=True,
-            encoding="utf-8",
-            errors="replace",
-            timeout=timeout,
-        )
-
-    @staticmethod
-    def _normalize_identifier(identifier: str) -> str:
-        raw = str(identifier or "").strip()
-        for prefix in ("skillhub-cn/", "skillhub/"):
-            if raw.startswith(prefix):
-                return raw[len(prefix):].strip()
-        return raw
-
-    def _meta_from_mapping(self, item: Dict[str, Any]) -> Optional[SkillMeta]:
-        name = str(
-            item.get("name")
-            or item.get("title")
-            or item.get("id")
-            or item.get("slug")
-            or ""
-        ).strip()
-        if not name:
-            return None
-        description = str(
-            item.get("description")
-            or item.get("summary")
-            or item.get("desc")
-            or "Skillhub skill"
-        ).strip()
-        identifier = str(item.get("identifier") or item.get("id") or item.get("slug") or name).strip()
-        tags = item.get("tags") if isinstance(item.get("tags"), list) else []
-        extra = {k: v for k, v in item.items() if k not in {"name", "title", "description", "summary", "desc", "tags"}}
-        extra["install_command"] = f"skillhub install {identifier}"
-        return SkillMeta(
-            name=name,
-            description=description,
-            source=self.source_id(),
-            identifier=f"{self.source_id()}/{identifier}",
-            trust_level="trusted",
-            tags=[str(t) for t in tags],
-            extra=extra,
-        )
-
-    def _parse_search_output(self, output: str, query: str, limit: int) -> List[SkillMeta]:
-        text = (output or "").strip()
-        if not text:
-            return []
-
-        try:
-            parsed = json.loads(text)
-        except json.JSONDecodeError:
-            parsed = None
-
-        if parsed is not None:
-            if isinstance(parsed, dict):
-                for key in ("skills", "results", "items", "data"):
-                    value = parsed.get(key)
-                    if isinstance(value, list):
-                        parsed = value
-                        break
-            if isinstance(parsed, list):
-                metas = [self._meta_from_mapping(item) for item in parsed if isinstance(item, dict)]
-                return [m for m in metas if m is not None][:limit]
-
-        results: List[SkillMeta] = []
-        for raw_line in text.splitlines():
-            line = raw_line.strip()
-            if not line or line.lower().startswith(("name", "skillhub", "search")):
-                continue
-            line = re.sub(r"^[\-\*\d\.\)\s]+", "", line).strip()
-            if not line:
-                continue
-            parts = re.split(r"\s{2,}|\s+-\s+|\s+—\s+", line, maxsplit=1)
-            name = parts[0].strip().split()[0]
-            description = parts[1].strip() if len(parts) > 1 else "Skillhub skill"
-            if not name or name.lower() in {"name", "skill"}:
-                continue
-            results.append(
-                SkillMeta(
-                    name=name,
-                    description=description,
-                    source=self.source_id(),
-                    identifier=f"{self.source_id()}/{name}",
-                    trust_level="trusted",
-                    extra={"install_command": f"skillhub install {name}"},
-                )
-            )
-            if len(results) >= limit:
-                break
-        return results
-
-    def search(self, query: str, limit: int = 10) -> List[SkillMeta]:
-        if not self.is_available:
-            return []
-        try:
-            proc = self._run(["search", query or ""], timeout=30)
-        except Exception as e:
-            logger.debug("skillhub search failed: %s", e)
-            return []
-        if proc.returncode != 0:
-            logger.debug("skillhub search exited %s: %s", proc.returncode, proc.stderr)
-            return []
-        return self._parse_search_output(proc.stdout, query, limit)
-
-    def inspect(self, identifier: str) -> Optional[SkillMeta]:
-        name = self._normalize_identifier(identifier)
-        if not name or not self.is_available:
-            return None
-        for meta in self.search(name, limit=20):
-            if meta.name.lower() == name.lower() or meta.identifier.lower().endswith(f"/{name.lower()}"):
-                return meta
-        return SkillMeta(
-            name=name,
-            description="Skillhub skill",
-            source=self.source_id(),
-            identifier=f"{self.source_id()}/{name}",
-            trust_level="trusted",
-            extra={"install_command": f"skillhub install {name}"},
-        )
-
-    def fetch(self, identifier: str) -> Optional[SkillBundle]:
-        name = self._normalize_identifier(identifier)
-        if not self.is_available or not name:
-            return None
-
-        with tempfile.TemporaryDirectory(prefix="hermes-skillhub-cn-") as tmp:
-            tmp_path = Path(tmp)
-            try:
-                proc = self._run(["install", name], cwd=tmp_path, timeout=120)
-            except Exception as e:
-                logger.debug("skillhub install failed for %s: %s", name, e)
-                return None
-            if proc.returncode != 0:
-                logger.debug("skillhub install exited %s for %s: %s", proc.returncode, name, proc.stderr)
-                return None
-
-            skill_files = [
-                p for p in tmp_path.rglob("SKILL.md")
-                if ".git" not in p.parts and ".hub" not in p.parts
-            ]
-            if not skill_files:
-                logger.debug("skillhub install produced no SKILL.md for %s", name)
-                return None
-
-            skill_dir = skill_files[0].parent
-            files: Dict[str, Union[str, bytes]] = {}
-            for fpath in skill_dir.rglob("*"):
-                if not fpath.is_file():
-                    continue
-                rel = fpath.relative_to(skill_dir).as_posix()
-                try:
-                    files[rel] = fpath.read_text(encoding="utf-8")
-                except UnicodeDecodeError:
-                    files[rel] = fpath.read_bytes()
-
-            meta = self.inspect(name)
-            bundle_name = (meta.name if meta else name) or skill_dir.name
-            return SkillBundle(
-                name=bundle_name,
-                files=files,
-                source=self.source_id(),
-                identifier=f"{self.source_id()}/{name}",
-                trust_level="trusted",
-                metadata={
-                    "install_command": f"skillhub install {name}",
-                    "stdout": proc.stdout[-2000:] if proc.stdout else "",
-                },
-            )
-
-
-# ---------------------------------------------------------------------------
 # Official optional skills source adapter
 # ---------------------------------------------------------------------------
 
@@ -2866,7 +2667,7 @@ def append_audit_log(action: str, skill_name: str, source: str,
         parts.append(extra)
     line = " ".join(parts) + "\n"
     try:
-        with open(AUDIT_LOG, "a") as f:
+        with open(AUDIT_LOG, "a", encoding="utf-8") as f:
             f.write(line)
     except OSError as e:
         logger.debug("Could not write audit log: %s", e)
@@ -3000,7 +2801,11 @@ def bundle_content_hash(bundle: SkillBundle) -> str:
     """Compute a deterministic hash for an in-memory skill bundle."""
     h = hashlib.sha256()
     for rel_path in sorted(bundle.files):
-        h.update(bundle.files[rel_path].encode("utf-8"))
+        content = bundle.files[rel_path]
+        if isinstance(content, bytes):
+            h.update(content)
+        else:
+            h.update(content.encode("utf-8"))
     return f"sha256:{h.hexdigest()[:16]}"
 
 
@@ -3295,50 +3100,17 @@ def create_source_router(auth: Optional[GitHubAuth] = None) -> List[SkillSource]
     taps_mgr = TapsManager()
     extra_taps = taps_mgr.list_taps()
 
-    try:
-        from hermes_cli.config import cfg_get, load_config
-
-        cfg = load_config()
-        preferred_remote = cfg_get(
-            cfg, "skills", "hub", "preferred_remote_source",
-            default="skillhub-cn",
-        )
-        enable_skillhub_cn = bool(cfg_get(
-            cfg, "skills", "hub", "skillhub_cn_enabled",
-            default=True,
-        ))
-        enable_overseas_fallback = bool(cfg_get(
-            cfg, "skills", "hub", "enable_overseas_fallback",
-            default=True,
-        ))
-    except Exception:
-        preferred_remote = "skillhub-cn"
-        enable_skillhub_cn = True
-        enable_overseas_fallback = True
-
     sources: List[SkillSource] = [
-        OptionalSkillSource(),        # Offline bundled optional skills (highest priority)
+        OptionalSkillSource(),        # Official optional skills (highest priority)
+        HermesIndexSource(auth=auth), # Centralized index (search + resolved install paths)
+        SkillsShSource(auth=auth),
+        WellKnownSkillSource(),
+        UrlSource(),                  # Direct HTTP(S) URL to a SKILL.md file
+        GitHubSource(auth=auth, extra_taps=extra_taps),
+        ClawHubSource(),
+        ClaudeMarketplaceSource(auth=auth),
+        LobeHubSource(),
     ]
-
-    if enable_skillhub_cn and preferred_remote == "skillhub-cn":
-        sources.append(SkillhubChinaSource())
-
-    if enable_overseas_fallback or not sources[1:]:
-        sources.extend([
-            HermesIndexSource(auth=auth), # Centralized index (search + resolved install paths)
-            SkillsShSource(auth=auth),
-            WellKnownSkillSource(),
-            UrlSource(),                  # Direct HTTP(S) URL to a SKILL.md file
-            GitHubSource(auth=auth, extra_taps=extra_taps),
-            ClawHubSource(),
-            ClaudeMarketplaceSource(auth=auth),
-            LobeHubSource(),
-        ])
-    else:
-        sources.append(UrlSource())
-
-    if enable_skillhub_cn and preferred_remote != "skillhub-cn":
-        sources.append(SkillhubChinaSource())
 
     return sources
 
