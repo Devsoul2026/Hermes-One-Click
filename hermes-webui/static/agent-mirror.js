@@ -147,17 +147,6 @@ async function applyAgentMirrorUpdate() {
     return;
   }
 
-  const ok = await (typeof showConfirmDialog === 'function'
-    ? showConfirmDialog({
-        title: typeof t === 'function' ? t('oc_confirm_title') : '确认更新',
-        message: typeof t === 'function' ? t('oc_confirm_message') : '将下载最新安装包并自动运行。安装程序启动后，请按提示完成安装。',
-        confirmLabel: typeof t === 'function' ? t('oc_update_btn') : '立即更新',
-        danger: false,
-        focusCancel: true,
-      })
-    : Promise.resolve(true));
-  if (!ok) return;
-
   if (btnUpdate) { btnUpdate.disabled = true; btnUpdate.textContent = typeof t === 'function' ? t('oc_downloading') : '下载中…'; }
 
   try {

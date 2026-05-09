@@ -27,7 +27,7 @@ logger = logging.getLogger(__name__)
 try:
     from api._oc_version import OC_VERSION  # written by Build-Staging.ps1
 except ImportError:
-    OC_VERSION = "0.8.0"  # development fallback
+    OC_VERSION = "0.9.0"  # development fallback
 
 # ---------------------------------------------------------------------------
 # Remote version source
@@ -164,9 +164,10 @@ def check_oc_update(force: bool = False) -> dict:
 
 
 def _build_download_urls(tag: str, filename: str) -> list[str]:
+    # Try direct GitHub first (works for most users); ghproxy as CN fallback.
     return [
-        f"{_DOWNLOAD_BASE_GHPROXY}/{tag}/{filename}",
         f"{_DOWNLOAD_BASE_GITHUB}/{tag}/{filename}",
+        f"{_DOWNLOAD_BASE_GHPROXY}/{tag}/{filename}",
     ]
 
 
@@ -203,7 +204,16 @@ def _download_worker(download_id: str, tag: str, filename: str) -> None:
             req = urllib.request.Request(
                 url, headers={"User-Agent": "HermesOneClick/updater"}
             )
-            with urllib.request.urlopen(req, timeout=60) as resp:
+            with urllib.request.urlopen(req, timeout=120) as resp:
+                # Reject HTML responses — proxies like ghproxy.com sometimes
+                # return their own HTML page instead of the binary file.
+                ct = resp.headers.get("Content-Type", "")
+                if "text/html" in ct:
+                    logger.debug(
+                        "oc_update: skipping %s — got Content-Type: %s", url, ct
+                    )
+                    continue
+
                 total = int(resp.headers.get("Content-Length") or 0)
                 done = 0
                 chunk = 65536
@@ -216,6 +226,21 @@ def _download_worker(download_id: str, tag: str, filename: str) -> None:
                         done += len(buf)
                         pct = int(done * 100 / total) if total else 0
                         _update(pct, done, total, "downloading")
+
+            # Validate: a real Windows PE starts with the "MZ" magic bytes.
+            with open(dest, "rb") as fp:
+                magic = fp.read(2)
+            if magic != b"MZ":
+                logger.debug(
+                    "oc_update: %s produced a non-PE file (magic=%r), trying next URL",
+                    url, magic,
+                )
+                try:
+                    dest.unlink(missing_ok=True)
+                except Exception:
+                    pass
+                continue
+
             _update(100, done, total, "ready")
             with _downloads_lock:
                 entry = _downloads.get(download_id)
@@ -226,7 +251,7 @@ def _download_worker(download_id: str, tag: str, filename: str) -> None:
             last_exc = exc
             logger.debug("oc_update: download failed (%s): %s", url, exc)
 
-    _update(0, 0, 0, "error", str(last_exc) if last_exc else "Download failed")
+    _update(0, 0, 0, "error", str(last_exc) if last_exc else "Download failed from all sources")
 
 
 def start_download(tag: str, filename: str) -> str:
@@ -260,7 +285,7 @@ def get_download_status(download_id: str) -> Optional[dict]:
 
 
 def launch_installer(download_id: str) -> dict:
-    """Launch the downloaded installer with elevated privileges (Windows runas)."""
+    """Launch the downloaded installer, then delete it to free disk space."""
     with _downloads_lock:
         entry = _downloads.get(download_id)
     if not entry:
@@ -274,19 +299,70 @@ def launch_installer(download_id: str) -> dict:
     if not path or not Path(path).exists():
         return {"ok": False, "message": "Installer file not found"}
 
+    # Resolve to full long path (avoid 8.3 short-name issues).
     try:
-        import ctypes
+        path = str(Path(path).resolve())
+    except Exception:
+        pass
 
-        ret = ctypes.windll.shell32.ShellExecuteW(None, "runas", path, None, None, 1)
-        if ret <= 32:
-            return {
-                "ok": False,
-                "message": f"ShellExecute failed (code {ret}). Try running the installer manually.",
-            }
-        return {
-            "ok": True,
-            "message": "Installer launched. Please follow the on-screen instructions.",
-        }
+    # Unblock the downloaded file (remove Mark-of-the-Web Zone.Identifier ADS).
+    try:
+        import subprocess as _sp
+        _sp.run(
+            ["powershell", "-NoProfile", "-Command", f'Unblock-File -Path "{path}"'],
+            capture_output=True,
+            timeout=10,
+        )
+    except Exception:
+        pass
+    try:
+        ads = path + ":Zone.Identifier"
+        if os.path.exists(ads):
+            os.remove(ads)
+    except Exception:
+        pass
+
+    # Launch the installer as a fully detached child process.
+    # subprocess.Popen works reliably from within WebView2-hosted Python
+    # (ShellExecuteW runas is often blocked in that security context).
+    # The installer's own UAC manifest requests elevation.
+    launched = False
+    try:
+        import subprocess as _sp
+        _sp.Popen(
+            [path],
+            creationflags=(
+                _sp.DETACHED_PROCESS | _sp.CREATE_NEW_PROCESS_GROUP
+            ),
+            close_fds=True,
+        )
+        launched = True
     except Exception as exc:
-        logger.exception("oc_update: launch_installer failed")
-        return {"ok": False, "message": str(exc)}
+        logger.debug("oc_update: Popen launch failed: %s", exc)
+
+    if not launched:
+        # Last resort: os.startfile (ShellExecuteW "open").
+        try:
+            os.startfile(path)
+            launched = True
+        except Exception as exc:
+            logger.exception("oc_update: startfile launch failed")
+            return {"ok": False, "message": str(exc)}
+
+    # Schedule deletion of the installer file after a short delay so the
+    # installer process has time to start reading it.
+    def _delete_later(p: str, delay: float = 30.0) -> None:
+        import time as _time
+        _time.sleep(delay)
+        try:
+            Path(p).unlink(missing_ok=True)
+            logger.debug("oc_update: deleted installer file %s", p)
+        except Exception:
+            pass
+
+    threading.Thread(target=_delete_later, args=(path,), daemon=True).start()
+
+    return {
+        "ok": True,
+        "message": "Installer launched. Please follow the on-screen instructions.",
+    }
