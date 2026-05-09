@@ -2689,6 +2689,20 @@ def handle_post(handler, parsed) -> bool:
             return j(handler, result)
         return bad(handler, result.get("message", "Launch failed"), 500)
 
+    if parsed.path == "/api/shutdown":
+        # Graceful self-termination — used after launching the installer so the
+        # WebView2 window closes and the installer can replace files cleanly.
+        import threading as _threading
+        import os as _os
+
+        def _do_exit():
+            import time as _time
+            _time.sleep(1.5)
+            _os._exit(0)
+
+        _threading.Thread(target=_do_exit, daemon=True).start()
+        return j(handler, {"ok": True})
+
     # ── File ops (POST) ──
     if parsed.path == "/api/file/delete":
         return _handle_file_delete(handler, body)

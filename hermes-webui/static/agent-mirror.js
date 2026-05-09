@@ -255,8 +255,15 @@ async function _launchOcInstaller() {
   try {
     const res = await api('/api/oc/update/install', { method: 'POST', body: JSON.stringify({ download_id: _ocDownloadId }) });
     if (res && res.ok) {
-      if (typeof showToast === 'function') showToast(typeof t === 'function' ? t('oc_installer_launched') : '安装程序已启动，请按提示完成安装', 8000, 'success');
+      // Show brief notice, then shut down the WebUI so the installer can replace files.
+      if (typeof showToast === 'function') {
+        showToast(typeof t === 'function' ? t('oc_installer_launched') : '安装程序已启动，应用即将关闭…', 3000, 'success');
+      }
       closeAgentVersionModal();
+      // Give the toast time to render, then tell the server to exit.
+      setTimeout(async () => {
+        try { await api('/api/shutdown', { method: 'POST', body: '{}' }); } catch (_) {}
+      }, 1500);
     } else {
       if (typeof showToast === 'function') showToast((res && res.message) || (typeof t === 'function' ? t('oc_launch_failed') : '启动安装程序失败'), 6000, 'error');
     }

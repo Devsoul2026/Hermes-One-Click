@@ -5012,7 +5012,7 @@ const LOCALES = {
     oc_downloading: '下载中…',
     oc_update_failed: '更新失败',
     oc_download_failed: '下载失败',
-    oc_installer_launched: '安装程序已启动，请按提示完成安装',
+    oc_installer_launched: '安装程序已启动，应用即将关闭…',
     oc_launch_failed: '启动安装程序失败',
     oc_update_available_toast: '发现新版本',
     oc_cn_download_title: '国内快速下载',
