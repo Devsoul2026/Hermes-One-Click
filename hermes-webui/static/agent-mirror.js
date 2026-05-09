@@ -3,6 +3,14 @@
 let _ocDownloadId = null;
 let _ocPollTimer = null;
 
+// Static fallback CN download links shown when the release body has no parsed links.
+// Update these URLs when uploading new cloud-storage packages for each release.
+const _OC_CN_LINKS_FALLBACK = [
+  { name: '夸克网盘', url: 'https://pan.quark.cn/s/1d713df0ea91' },
+  { name: '123网盘',  url: 'https://1855173445.share.123pan.cn/123pan/IM9Cvd-8nJD3?pwd=B0mL#' },
+  { name: '百度网盘', url: 'https://pan.baidu.com/s/1SMCFEcggfn_3lOWMm-hMKA?pwd=t9kd' },
+];
+
 function _ocEsc(s) {
   const d = document.createElement('div');
   d.textContent = s == null ? '' : String(s);
@@ -106,12 +114,36 @@ async function _renderOcUpdateModal() {
 
   if (data.error) {
     html += '<p style="margin-top:10px;font-size:12px;color:var(--muted)">' + _ocEsc(data.error) + '</p>';
-  } else if (data.update_available) {
+  } else   if (data.update_available) {
     html += '<p style="margin-top:14px;font-weight:600;color:var(--accent)">' +
       _ocEsc(typeof t === 'function' ? t('oc_update_available') : '发现新版本，点击下方按钮更新') + '</p>';
     if (data.changelog) {
-      html += '<pre style="margin-top:8px;font-size:11px;white-space:pre-wrap;color:var(--muted);background:var(--code-bg);padding:8px;border-radius:6px;max-height:120px;overflow:auto">' +
-        _ocEsc(data.changelog) + '</pre>';
+      // Strip the CN-download section from changelog display to avoid duplication
+      const cleanLog = data.changelog.replace(/##\s*国内快速下载[\s\S]*/,'').trim();
+      if (cleanLog) {
+        html += '<pre style="margin-top:8px;font-size:11px;white-space:pre-wrap;color:var(--muted);background:var(--code-bg);padding:8px;border-radius:6px;max-height:120px;overflow:auto">' +
+          _ocEsc(cleanLog) + '</pre>';
+      }
+    }
+    // CN cloud-storage download links — use parsed from release body, or static fallback
+    const cnLinks = (data.cn_download_links && data.cn_download_links.length > 0)
+      ? data.cn_download_links
+      : _OC_CN_LINKS_FALLBACK;
+    if (cnLinks.length > 0) {
+      html += '<div style="margin-top:14px;padding-top:12px;border-top:1px solid var(--border)">' +
+        '<div style="font-size:12px;font-weight:600;color:var(--muted);margin-bottom:8px">' +
+        _ocEsc(typeof t === 'function' ? t('oc_cn_download_title') : '国内快速下载') + '</div>' +
+        '<div style="display:flex;flex-wrap:wrap;gap:8px">';
+      for (const lnk of cnLinks) {
+        html += '<a href="' + _ocEsc(lnk.url) + '" target="_blank" rel="noopener noreferrer" ' +
+          'style="display:inline-flex;align-items:center;gap:5px;padding:6px 12px;border-radius:8px;' +
+          'background:var(--surface);border:1px solid var(--border2);color:var(--text);font-size:12px;' +
+          'font-weight:500;text-decoration:none;transition:background .15s" ' +
+          'onmouseover="this.style.background=\'var(--border2)\'" ' +
+          'onmouseout="this.style.background=\'var(--surface)\'">' +
+          _ocEsc(lnk.name) + '</a>';
+      }
+      html += '</div></div>';
     }
     if (btnUpdate) {
       btnUpdate.style.display = 'inline-flex';
@@ -123,6 +155,24 @@ async function _renderOcUpdateModal() {
   } else {
     html += '<p style="margin-top:14px;font-weight:600">' +
       _ocEsc(typeof t === 'function' ? t('oc_up_to_date') : '已是最新版本') + '</p>';
+    // Still show CN download links for manual re-install convenience
+    const cnLinks = (data.cn_download_links && data.cn_download_links.length > 0)
+      ? data.cn_download_links
+      : _OC_CN_LINKS_FALLBACK;
+    html += '<div style="margin-top:14px;padding-top:12px;border-top:1px solid var(--border)">' +
+      '<div style="font-size:12px;font-weight:600;color:var(--muted);margin-bottom:8px">' +
+      _ocEsc(typeof t === 'function' ? t('oc_cn_download_title') : '国内快速下载') + '</div>' +
+      '<div style="display:flex;flex-wrap:wrap;gap:8px">';
+    for (const lnk of cnLinks) {
+      html += '<a href="' + _ocEsc(lnk.url) + '" target="_blank" rel="noopener noreferrer" ' +
+        'style="display:inline-flex;align-items:center;gap:5px;padding:6px 12px;border-radius:8px;' +
+        'background:var(--surface);border:1px solid var(--border2);color:var(--text);font-size:12px;' +
+        'font-weight:500;text-decoration:none;transition:background .15s" ' +
+        'onmouseover="this.style.background=\'var(--border2)\'" ' +
+        'onmouseout="this.style.background=\'var(--surface)\'">' +
+        _ocEsc(lnk.name) + '</a>';
+    }
+    html += '</div></div>';
   }
 
   // Progress bar placeholder (hidden by default)

@@ -5015,6 +5015,7 @@ const LOCALES = {
     oc_installer_launched: '安装程序已启动，请按提示完成安装',
     oc_launch_failed: '启动安装程序失败',
     oc_update_available_toast: '发现新版本',
+    oc_cn_download_title: '国内快速下载',
     new_conversation: '新建对话',
     filter_conversations: '筛选对话…',
     session_time_unknown: '未知',

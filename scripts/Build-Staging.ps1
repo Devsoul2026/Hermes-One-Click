@@ -362,7 +362,7 @@ Invoke-RobocopyCopy $srcWebui $dstWebui @(
 
 # Write current One-Click version into the staged webui so the update checker
 # knows what is installed. Bump $OcVersion when releasing a new build.
-$OcVersion = "0.7.0"
+$OcVersion = "0.9.0"
 "OC_VERSION = '$OcVersion'" | Set-Content -Path (Join-Path $dstWebui "api\_oc_version.py") -Encoding utf8
 Write-Host "Wrote OC version $OcVersion -> api/_oc_version.py"
 

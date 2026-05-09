@@ -82,6 +82,31 @@ def _parse_version(v: str) -> tuple[int, ...]:
         return (0,)
 
 
+def _parse_cn_links(body: str) -> list[dict]:
+    """Extract CN cloud storage links from the release body.
+
+    Looks for a section headed '## 国内快速下载' and extracts lines of the form:
+      - 名称: https://...
+    Returns a list of {"name": "...", "url": "..."} dicts.
+    """
+    import re as _re
+    links: list[dict] = []
+    in_section = False
+    for line in body.splitlines():
+        stripped = line.strip()
+        if _re.match(r"^##\s*国内快速下载", stripped):
+            in_section = True
+            continue
+        if in_section:
+            if stripped.startswith("##"):
+                break
+            # Match lines like "- 夸克网盘: https://..."
+            m = _re.match(r"^[-*]\s*(.+?)[:：]\s*(https?://\S+)", stripped)
+            if m:
+                links.append({"name": m.group(1).strip(), "url": m.group(2).strip()})
+    return links
+
+
 def check_oc_update(force: bool = False) -> dict:
     """Return update check result. Uses a 30-min server-side cache.
 
@@ -104,6 +129,7 @@ def check_oc_update(force: bool = False) -> dict:
         "changelog": "",
         "tag": "",
         "filename": "",
+        "cn_download_links": [],
         "checked_at": time.time(),
         "error": None,
     }
@@ -141,7 +167,9 @@ def check_oc_update(force: bool = False) -> dict:
         latest = tag.lstrip("Vv")
         result["tag"] = tag
         result["latest"] = latest
-        result["changelog"] = release.get("body", "").strip()
+        body = release.get("body", "").strip()
+        result["changelog"] = body
+        result["cn_download_links"] = _parse_cn_links(body)
 
         for asset in release.get("assets", []):
             name = asset.get("name", "")
