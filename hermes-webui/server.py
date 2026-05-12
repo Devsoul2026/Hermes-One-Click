@@ -197,6 +197,14 @@ def main() -> None:
     except Exception as e:
         print(f'[!!] WARNING: Gateway watcher failed to start: {e}', flush=True)
 
+    # Start the Phoenix Guardian for process health monitoring and crash recovery
+    try:
+        from api.phoenix_guardian import start_guardian
+        start_guardian()
+        print('[ok] Phoenix Guardian started', flush=True)
+    except Exception as e:
+        print(f'[!!] WARNING: Phoenix Guardian failed to start: {e}', flush=True)
+
     # Auto-start the gateway process in the background so it is already running
     # when the user opens the browser window.  Uses a daemon thread so it never
     # blocks server startup or shutdown.
@@ -260,6 +268,12 @@ def main() -> None:
             stop_watcher()
         except Exception:
             logger.debug("Failed to stop gateway watcher during shutdown")
+        # Stop the Phoenix Guardian on shutdown
+        try:
+            from api.phoenix_guardian import stop_guardian
+            stop_guardian()
+        except Exception:
+            logger.debug("Failed to stop phoenix guardian during shutdown")
 
 if __name__ == '__main__':
     main()
