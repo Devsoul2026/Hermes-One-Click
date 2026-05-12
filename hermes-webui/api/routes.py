@@ -2044,6 +2044,50 @@ def handle_get(handler, parsed) -> bool:
             logger.exception("rollback/diff failed")
             return bad(handler, str(e), status=500)
 
+    # ── Phoenix Guardian (POST) ──
+    if parsed.path == "/api/phoenix/restart":
+        from api.phoenix_guardian import get_guardian
+
+        g = get_guardian()
+        if not g:
+            return j(handler, {"error": "guardian not initialized"}, status=503)
+        result = g.manual_restart()
+        return j(handler, result)
+
+    if parsed.path == "/api/phoenix/config":
+        from api.phoenix_guardian import get_guardian
+
+        body = _read_body(handler, max_length=2048)
+        if body is None:
+            return True
+        try:
+            config = json.loads(body)
+        except (json.JSONDecodeError, ValueError):
+            return bad(handler, "invalid JSON")
+        g = get_guardian()
+        if not g:
+            return j(handler, {"error": "guardian not initialized"}, status=503)
+        g.set_config(config)
+        return j(handler, {"ok": True})
+
+    if parsed.path == "/api/phoenix/enable":
+        from api.phoenix_guardian import get_guardian
+
+        g = get_guardian()
+        if not g:
+            return j(handler, {"error": "guardian not initialized"}, status=503)
+        g.enable()
+        return j(handler, {"ok": True})
+
+    if parsed.path == "/api/phoenix/disable":
+        from api.phoenix_guardian import get_guardian
+
+        g = get_guardian()
+        if not g:
+            return j(handler, {"error": "guardian not initialized"}, status=503)
+        g.disable()
+        return j(handler, {"ok": True})
+
     return False  # 404
 
 
