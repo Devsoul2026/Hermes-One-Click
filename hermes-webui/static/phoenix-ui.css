@@ -1,0 +1,392 @@
+/* ── Phoenix Process Guardian UI ──────────────────────────────────────────── */
+/* Fits Hermes-One-Click design system: CSS variables, .dark mode, skins       */
+
+/* ── Status Indicator (titlebar pill) ────────────────────────────────────── */
+.phoenix-pill {
+  display:inline-flex;align-items:center;gap:6px;
+  padding:2px 10px 2px 6px;border-radius:var(--radius-pill);
+  background:var(--surface);border:1px solid var(--border);
+  font-size:11px;font-weight:500;color:var(--muted);
+  cursor:pointer;user-select:none;transition:all .18s ease;
+  white-space:nowrap;vertical-align:middle;line-height:1.6;
+}
+.phoenix-pill:hover { border-color:var(--accent);color:var(--text); }
+.phoenix-pill:focus-visible { outline:2px solid var(--focus-ring);outline-offset:1px; }
+
+.phoenix-dot {
+  width:8px;height:8px;border-radius:50%;flex-shrink:0;
+  position:relative;
+}
+/* Running - green pulse */
+.phoenix-dot.running {
+  background:#22c55e;box-shadow:0 0 0 0 rgba(34,197,94,.5);
+  animation:phx-pulse 1.8s ease-in-out infinite;
+}
+/* Starting - yellow spin */
+.phoenix-dot.starting {
+  background:#eab308;
+  animation:phx-spin .8s linear infinite;
+}
+/* Crashed - red blink */
+.phoenix-dot.crashed {
+  background:#ef4444;
+  animation:phx-blink .7s ease-in-out infinite;
+}
+/* Stopping - gray */
+.phoenix-dot.stopping { background:#6b7280; }
+/* Unknown - light gray */
+.phoenix-dot.unknown { background:#d1d5db; }
+/* Disabled - blue with slash overlay */
+.phoenix-dot.disabled { background:#3b82f6;position:relative; }
+.phoenix-dot.disabled::after {
+  content:'';position:absolute;top:50%;left:-1px;right:-1px;height:2px;
+  background:var(--bg,inherit);transform:rotate(-45deg) translateY(-50%);
+}
+
+@keyframes phx-pulse {
+  0%,100%{box-shadow:0 0 0 0 rgba(34,197,94,.5)}
+  50%{box-shadow:0 0 0 5px rgba(34,197,94,0)}
+}
+@keyframes phx-spin {
+  to{transform:rotate(360deg)}
+}
+@keyframes phx-blink {
+  0%,100%{opacity:1} 50%{opacity:.25}
+}
+
+/* ── Floating Panel (collapsible detail + events) ─────────────────────────── */
+.phoenix-panel {
+  position:fixed;z-index:900;
+  bottom:60px;right:16px;
+  width:380px;max-height:520px;
+  background:var(--bg);border:1px solid var(--border);
+  border-radius:var(--radius-lg);
+  box-shadow:0 12px 40px rgba(0,0,0,.22),0 4px 12px rgba(0,0,0,.12);
+  display:flex;flex-direction:column;
+  overflow:hidden;
+  font-family:var(--font-ui);
+  transform-origin:bottom right;
+  transition:transform .25s cubic-bezier(.4,0,.2,1), opacity .2s ease;
+  opacity:1;
+}
+.phoenix-panel.phx-collapsed {
+  transform:scale(.92) translateY(8px);
+  opacity:0;pointer-events:none;
+}
+
+/* Panel header (draggable area) */
+.phoenix-panel-head {
+  display:flex;align-items:center;gap:8px;
+  padding:10px 14px;background:var(--surface);
+  border-bottom:1px solid var(--border);
+  cursor:default;user-select:none;
+  flex-shrink:0;
+}
+.phoenix-panel-title {
+  font-size:13px;font-weight:600;color:var(--text);
+  display:flex;align-items:center;gap:6px;flex:1;min-width:0;
+}
+.phoenix-panel-icon {
+  width:16px;height:16px;flex-shrink:0;color:var(--accent);
+}
+.phoenix-panel-status-badge {
+  font-size:11px;font-weight:600;padding:2px 8px;border-radius:var(--radius-pill);
+  text-transform:uppercase;letter-spacing:.04em;
+}
+.phoenix-panel-status-badge.status-running   { background:rgba(34,197,94,.15);color:#22c55e; }
+.phoenix-panel-status-badge.status-starting  { background:rgba(234,179,8,.15);color:#eab308; }
+.phoenix-panel-status-badge.status-stopping  { background:rgba(107,114,128,.15);color:#9ca3af; }
+.phoenix-panel-status-badge.status-crashed   { background:rgba(239,68,68,.15);color:#ef4444; }
+.phoenix-panel-status-badge.status-unknown   { background:rgba(209,213,219,.15);color:#9ca3af; }
+.phoenix-panel-status-badge.status-disabled  { background:rgba(59,130,246,.15);color:#3b82f6; }
+
+.phoenix-panel-close {
+  width:24px;height:24px;border:none;background:none;
+  color:var(--muted);cursor:pointer;border-radius:var(--radius-sm);
+  display:flex;align-items:center;justify-content:center;
+  flex-shrink:0;font-size:16px;line-height:1;
+  transition:color .15s,background .15s;
+}
+.phoenix-panel-close:hover { color:var(--error);background:var(--hover-bg); }
+
+/* Collapsible sections within panel */
+.phoenix-section {
+  border-bottom:1px solid var(--border);
+}
+.phoenix-section:last-child { border-bottom:none; }
+
+.phoenix-section-header {
+  display:flex;align-items:center;justify-content:space-between;
+  padding:8px 14px;cursor:pointer;user-select:none;
+  transition:background .15s;
+  flex-shrink:0;
+}
+.phoenix-section-header:hover { background:var(--hover-bg); }
+.phoenix-section-title {
+  font-size:11px;font-weight:600;text-transform:uppercase;
+  letter-spacing:.05em;color:var(--muted);
+  display:flex;align-items:center;gap:6px;
+}
+.phoenix-section-chevron {
+  width:14px;height:14px;color:var(--muted);
+  transition:transform .2s ease;
+}
+.phoenix-section-header.open .phoenix-section-chevron {
+  transform:rotate(180deg);
+}
+
+.phoenix-section-body {
+  max-height:0;overflow:hidden;
+  transition:max-height .3s cubic-bezier(.4,0,.2,1);
+}
+.phoenix-section-body.open { max-height:600px;overflow-y:auto; }
+
+/* ── Detail Section ───────────────────────────────────────────────────────── */
+.phoenix-detail-grid {
+  padding:10px 14px;display:grid;grid-template-columns:auto 1fr;
+  gap:6px 12px;font-size:12px;
+}
+.phoenix-detail-label {
+  color:var(--muted);font-size:11px;display:flex;align-items:center;
+}
+.phoenix-detail-value {
+  color:var(--text);font-weight:500;
+}
+.phoenix-detail-value.warning { color:var(--warning); }
+.phoenix-detail-value.error { color:var(--error); }
+.phoenix-detail-value.success { color:var(--success); }
+.phoenix-uptime {
+  font-variant-numeric:tabular-nums;
+  letter-spacing:.02em;
+}
+
+/* Control buttons row */
+.phoenix-controls {
+  display:flex;gap:8px;padding:8px 14px 10px;
+  flex-wrap:wrap;
+}
+.phoenix-btn {
+  padding:5px 12px;border:1px solid var(--border);
+  border-radius:var(--radius-md);background:var(--surface);
+  color:var(--text);font-size:11px;font-weight:600;
+  cursor:pointer;transition:all .15s ease;
+  display:inline-flex;align-items:center;gap:4px;
+  white-space:nowrap;
+}
+.phoenix-btn:hover { border-color:var(--accent);background:var(--accent-bg); }
+.phoenix-btn:active { transform:scale(.97); }
+.phoenix-btn:disabled { opacity:.45;cursor:not-allowed;transform:none; }
+.phoenix-btn.primary {
+  background:var(--accent);color:#fff;border-color:var(--accent);
+}
+.phoenix-btn.primary:hover { background:var(--accent-hover); }
+.phoenix-btn.danger {
+  color:var(--error);border-color:rgba(239,68,68,.3);
+}
+.phoenix-btn.danger:hover { background:rgba(239,68,68,.08); }
+
+/* Toggle switch */
+.phoenix-toggle-wrap {
+  display:flex;align-items:center;gap:6px;padding:4px 14px 8px;
+  font-size:11px;color:var(--muted);
+}
+.phoenix-toggle {
+  position:relative;width:34px;height:20px;
+  appearance:none;-webkit-appearance:none;
+  background:var(--border2);border-radius:10px;
+  cursor:pointer;transition:background .2s;flex-shrink:0;
+}
+.phoenix-toggle::before {
+  content:'';position:absolute;top:2px;left:2px;
+  width:16px;height:16px;border-radius:50%;
+  background:#fff;transition:transform .2s;
+  box-shadow:0 1px 3px rgba(0,0,0,.2);
+}
+.phoenix-toggle:checked { background:var(--accent); }
+.phoenix-toggle:checked::before { transform:translateX(14px); }
+.phoenix-toggle:focus-visible { outline:2px solid var(--focus-ring);outline-offset:1px; }
+
+/* ── Config Section ──────────────────────────────────────────────────────── */
+.phoenix-config-grid {
+  padding:10px 14px;display:grid;grid-template-columns:1fr 1fr;
+  gap:10px;
+}
+.phoenix-config-field {
+  display:flex;flex-direction:column;gap:3px;
+}
+.phoenix-config-field.full-width { grid-column:1/-1; }
+.phoenix-config-label {
+  font-size:10px;font-weight:600;text-transform:uppercase;
+  letter-spacing:.04em;color:var(--muted);
+}
+.phoenix-config-input {
+  padding:6px 8px;border:1px solid var(--border);
+  border-radius:var(--radius-sm);
+  background:var(--input-bg);color:var(--text);
+  font-size:12px;font-family:var(--font-ui);
+  outline:none;transition:border-color .15s;
+  width:100%;box-sizing:border-box;
+}
+.phoenix-config-input:focus { border-color:var(--accent); }
+.phoenix-config-input[type=number] { width:80px; }
+
+.phoenix-config-actions {
+  display:flex;gap:8px;padding:8px 14px 10px;
+}
+
+/* ── Event Log Timeline ──────────────────────────────────────────────────── */
+.phoenix-events-list {
+  max-height:220px;overflow-y:auto;
+  padding:4px 0;
+  /* Custom scrollbar to match theme */
+  scrollbar-width:thin;scrollbar-color:var(--border-muted) transparent;
+}
+.phoenix-events-list::-webkit-scrollbar { width:5px; }
+.phoenix-events-list::-webkit-scrollbar-track { background:transparent; }
+.phoenix-events-list::-webkit-scrollbar-thumb {
+  background:var(--border-muted);border-radius:3px;
+}
+
+.phoenix-event-item {
+  display:flex;gap:8px;padding:7px 14px;
+  font-size:11px;line-height:1.5;
+  transition:background .12s;
+  align-items:flex-start;
+}
+.phoenix-event-item:hover { background:var(--surface-subtle); }
+.phoenix-event-time {
+  font-family:'SF Mono',ui-monospace,'Cascadia Code',monospace;
+  font-size:10px;color:var(--muted);white-space:nowrap;
+  min-width:58px;flex-shrink:0;padding-top:1px;
+}
+.phoenix-event-icon {
+  width:16px;height:16px;flex-shrink:0;margin-top:1px;
+  display:flex;align-items:center;justify-content:center;
+  border-radius:50%;font-size:10px;line-height:1;
+}
+.phoenix-event-icon.ev-health-passed  { background:rgba(34,197,94,.15);color:#22c55e; }
+.phoenix-event-icon.ev-health-failed  { background:rgba(239,68,68,.15);color:#ef4444; }
+.phoenix-event-icon.ev-crash          { background:rgba(239,68,68,.2);color:#ef4444; }
+.phoenix-event-icon.ev-restart-init    { background:rgba(234,179,8,.15);color:#eab308; }
+.phoenix-event-icon.ev-restart-success { background:rgba(34,197,94,.15);color:#22c55e; }
+.phoenix-event-icon.ev-restart-failed  { background:rgba(239,68,68,.15);color:#ef4444; }
+.phoenix-event-icon.ev-status-change   { background:rgba(59,130,246,.15);color:#3b82f6; }
+.phoenix-event-icon.ev-info           { background:rgba(148,163,184,.15);color:#94a3b8; }
+
+.phoenix-event-desc {
+  color:var(--text);word-break:break-word;
+  flex:1;min-width:0;
+}
+
+.phoenix-events-toolbar {
+  display:flex;align-items:center;justify-content:space-between;
+  padding:6px 14px;border-top:1px solid var(--border);
+  flex-shrink:0;
+}
+.phoenix-events-count {
+  font-size:10px;color:var(--muted);
+}
+.phoenix-events-clear {
+  font-size:10px;color:var(--muted);background:none;
+  border:none;cursor:pointer;padding:2px 6px;border-radius:var(--radius-sm);
+  transition:color .12s,background .12s;
+}
+.phoenix-events-clear:hover { color:var(--error);background:rgba(239,68,68,.06); }
+
+/* Empty state for events */
+.phoenix-events-empty {
+  padding:20px 14px;text-align:center;
+  color:var(--muted);font-size:11px;
+}
+
+/* ── Toast / Notification ────────────────────────────────────────────────── */
+.phoenix-toast {
+  position:fixed;z-index:9999;
+  bottom:100px;right:16px;
+  padding:8px 14px;border-radius:var(--radius-md);
+  font-size:12px;font-weight:500;color:#fff;
+  box-shadow:0 4px 16px rgba(0,0,0,.25);
+  animation:phx-toast-in .25s ease,phx-toast-out .25s ease 2.5s forwards;
+  pointer-events:none;max-width:320px;
+}
+.phoenix-toast.toast-success { background:var(--success,#3D8B40); }
+.phoenix-toast.toast-error   { background:var(--error,#C62828); }
+.phoenix-toast.toast-info    { background:var(--info,#0288A8); }
+.phoenix-toast.toast-warning { background:var(--warning,#E68A00); }
+
+@keyframes phx-toast-in {
+  from{opacity:0;transform:translateY(8px) scale(.96)}
+  to{opacity:1;transform:translateY(0) scale(1)}
+}
+@keyframes phx-toast-out {
+  from{opacity:1;transform:translateY(0) scale(1)}
+  to{opacity:0;transform:translateY(-6px) scale(.96)}
+}
+
+/* ── Confirm Dialog ──────────────────────────────────────────────────────── */
+.phoenix-overlay {
+  position:fixed;inset:0;z-index:9980;
+  background:rgba(0,0,0,.45);display:flex;
+  align-items:center;justify-content:center;
+  animation:phx-fade-in .15s ease;
+}
+.phoenix-dialog {
+  background:var(--bg);border:1px solid var(--border);
+  border-radius:var(--radius-lg);padding:20px;width:340px;max-width:90vw;
+  box-shadow:0 16px 48px rgba(0,0,0,.3);
+  animation:phx-scale-in .18s ease;
+}
+.phoenix-dialog-title {
+  font-size:14px;font-weight:700;color:var(--text);margin-bottom:8px;
+}
+.phoenix-dialog-desc {
+  font-size:12px;color:var(--muted);line-height:1.55;margin-bottom:16px;
+}
+.phoenix-dialog-actions {
+  display:flex;gap:8px;justify-content:flex-end;
+}
+
+@keyframes phx-fade-in { from{opacity:0} to{opacity:1} }
+@keyframes phx-scale-in { from{opacity:0;transform:scale(.95)} to{opacity:1;transform:scale(1)} }
+
+/* ── Stats Row (compact) ──────────────────────────────────────────────────── */
+.phoenix-stats-row {
+  display:grid;grid-template-columns:repeat(3,1fr);
+  gap:1px;padding:8px 14px;background:var(--surface);
+  border-top:1px solid var(--border);border-bottom:1px solid var(--border);
+}
+.phoenix-stat {
+  text-align:center;padding:4px 0;
+}
+.phoenix-stat-value {
+  font-size:14px;font-weight:700;color:var(--text);
+  font-variant-numeric:tabular-nums;
+}
+.phoenix-stat-label {
+  font-size:9px;text-transform:uppercase;
+  letter-spacing:.04em;color:var(--muted);margin-top:2px;
+}
+
+/* ── Loading spinner on button ────────────────────────────────────────────── */
+.phoenix-btn .phx-spinner {
+  display:inline-block;width:12px;height:12px;
+  border:2px solid transparent;border-top-color:currentColor;
+  border-radius:50%;animation:phx-spin .6s linear infinite;
+  vertical-align:middle;
+}
+
+/* ── Responsive adjustments ──────────────────────────────────────────────── */
+@media(max-width:480px){
+  .phoenix-panel{
+    right:8px;left:8px;width:auto;bottom:52px;max-height:60vh;
+  }
+  .phoenix-config-grid { grid-template-columns:1fr; }
+  .phoenix-stats-row { grid-template-columns:repeat(3,1fr); }
+}
+@media(prefers-color-scheme:dark){ /* extra dark-mode polish handled by parent vars */ }
+
+/* ── Titlebar Integration ──────────────────────────────────────────────── */
+.app-titlebar-phoenix {
+  display:inline-flex;align-items:center;margin-left:6px;
+  flex-shrink:0;
+}
