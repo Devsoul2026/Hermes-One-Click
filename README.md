@@ -19,7 +19,7 @@ Hermes One-Click 是一个面向 Windows 的 Hermes 可视化桌面包。它把 
 
 ### 交流与支持
 
-- **抖音：@冒爸** — 每日分享 AI Agent 实战内容（在抖音内搜索「冒爸」关注）。
+- **抖音：@冒爸聊AI** — 每日分享 AI Agent 实战内容（在抖音内搜索「冒爸聊AI」关注）。
 - **知识星球「冒爸聊 AI」** — 深度交流、独家技能包、1 对 1 咨询与企业需求对接。
 - **[GitHub Issues](https://github.com/Devsoul2026/Hermes-One-Click/issues)** — 技术问题与功能建议请在此提交，便于跟踪与协作。
 
