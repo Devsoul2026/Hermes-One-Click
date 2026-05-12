@@ -1906,6 +1906,37 @@ def handle_get(handler, parsed) -> bool:
     if parsed.path == "/api/crons/status":
         return _handle_cron_status(handler, parsed)
 
+    # ── Phoenix Guardian (GET) ──
+    if parsed.path == "/api/phoenix/status":
+        from api.phoenix_guardian import get_guardian
+
+        g = get_guardian()
+        if not g:
+            return j(handler, {"error": "guardian not initialized"}, status=503)
+        return j(handler, g.state)
+
+    if parsed.path == "/api/phoenix/events":
+        from api.phoenix_guardian import get_guardian
+
+        qs = parse_qs(parsed.query)
+        limit = qs.get("limit", [None])[0]
+        limit = int(limit) if limit else None
+        g = get_guardian()
+        if not g:
+            return j(handler, {"events": []})
+        return j(handler, {"events": g.get_events(limit)})
+
+    if parsed.path == "/api/phoenix/stats":
+        from api.phoenix_guardian import get_guardian
+
+        g = get_guardian()
+        if not g:
+            return j(handler, {"error": "guardian not initialized"}, status=503)
+        return j(handler, g.get_stats())
+
+    if parsed.path == "/api/phoenix/stream":
+        return _handle_phoenix_sse_stream(handler, parsed)
+
     # ── Skills API (GET) ──
     if parsed.path == "/api/skills":
         from api.startup import sync_bundled_skills
@@ -3308,6 +3339,47 @@ def handle_post(handler, parsed) -> bool:
             logger.exception("rollback/restore failed")
             return bad(handler, str(e), status=500)
 
+    # ── Phoenix Guardian (POST) ──
+    if parsed.path == "/api/phoenix/restart":
+        from api.phoenix_guardian import get_guardian
+
+        g = get_guardian()
+        if not g:
+            return j(handler, {"error": "guardian not initialized"}, status=503)
+        result = g.manual_restart()
+        return j(handler, result)
+
+    if parsed.path == "/api/phoenix/config":
+        from api.phoenix_guardian import get_guardian
+        from api.helpers import read_body
+
+        config = read_body(handler)
+        if not config:
+            return bad(handler, "invalid JSON")
+        g = get_guardian()
+        if not g:
+            return j(handler, {"error": "guardian not initialized"}, status=503)
+        g.set_config(config)
+        return j(handler, {"ok": True})
+
+    if parsed.path == "/api/phoenix/enable":
+        from api.phoenix_guardian import get_guardian
+
+        g = get_guardian()
+        if not g:
+            return j(handler, {"error": "guardian not initialized"}, status=503)
+        g.enable()
+        return j(handler, {"ok": True})
+
+    if parsed.path == "/api/phoenix/disable":
+        from api.phoenix_guardian import get_guardian
+
+        g = get_guardian()
+        if not g:
+            return j(handler, {"error": "guardian not initialized"}, status=503)
+        g.disable()
+        return j(handler, {"ok": True})
+
     return False  # 404
 
 
@@ -3712,6 +3784,44 @@ def _content_disposition_value(disposition: str, filename: str) -> str:
         f'{disposition}; filename="{ascii_fallback}"; '
         f"filename*=UTF-8''{quoted_name}"
     )
+
+
+def _handle_phoenix_sse_stream(handler, parsed):
+    """SSE event stream for Phoenix Guardian status events."""
+    from api.phoenix_guardian import get_guardian
+
+    g = get_guardian()
+    if not g:
+        handler.send_response(503)
+        handler.send_header('Content-Type', 'text/event-stream')
+        handler.end_headers()
+        return
+    q = g.subscribe()
+    try:
+        handler.send_response(200)
+        handler.send_header('Content-Type', 'text/event-stream')
+        handler.send_header('Cache-Control', 'no-cache')
+        handler.send_header('X-Accel-Buffering', 'no')
+        handler.send_header('Connection', 'keep-alive')
+        handler.end_headers()
+        state = g.state
+        _sse(handler, 'initial', state)
+        while True:
+            try:
+                payload = q.get(timeout=30)
+            except queue.Empty:
+                handler.wfile.write(b': keepalive\n\n')
+                handler.wfile.flush()
+                continue
+            if payload is None:
+                break
+            etype = payload.get("type", "unknown")
+            edata = payload.get("data", {})
+            _sse(handler, etype, edata)
+    except (BrokenPipeError, ConnectionResetError, ConnectionAbortedError):
+        pass
+    finally:
+        g.unsubscribe(q)
 
 
 def _parse_range_header(range_header: str, file_size: int) -> tuple[int, int] | None:
