@@ -2778,6 +2778,24 @@ def handle_post(handler, parsed) -> bool:
         _threading.Thread(target=_do_exit, daemon=True).start()
         return j(handler, {"ok": True})
 
+    if parsed.path == "/api/open-url":
+        # Open a URL in the system default browser.  Used by the feedback modal
+        # so the link launches outside the WebView2 sandbox.
+        url = body.get("url", "").strip()
+        if not url or not url.startswith(("http://", "https://")):
+            return bad(handler, "invalid url")
+        import webbrowser as _wb
+        try:
+            _wb.open(url)
+        except Exception:
+            # Fallback: os.startfile / PowerShell Start-Process
+            try:
+                import subprocess as _sp
+                _sp.Popen(["cmd", "/c", "start", "", url], shell=False)
+            except Exception as exc:
+                return bad(handler, str(exc), 500)
+        return j(handler, {"ok": True})
+
     # ── File ops (POST) ──
     if parsed.path == "/api/file/delete":
         return _handle_file_delete(handler, body)

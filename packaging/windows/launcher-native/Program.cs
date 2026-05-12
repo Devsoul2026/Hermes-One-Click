@@ -62,6 +62,34 @@ internal sealed class HermesWindow : Form
             SetStatus("Starting local Hermes One-Click server...");
             await EnsureServerAsync();
 
+            // Monitor server process after successful startup.
+            // Exit code 0 means a graceful shutdown (e.g. the update installer was
+            // launched and /api/shutdown was called).  Any other code is a crash —
+            // show an error so the user knows what happened.
+            if (_serverProcess is { HasExited: false })
+            {
+                _serverProcess.EnableRaisingEvents = true;
+                _serverProcess.Exited += (_, _) =>
+                {
+                    var code = _serverProcess.ExitCode;
+                    BeginInvoke(new Action(() =>
+                    {
+                        if (code == 0)
+                        {
+                            // Clean exit — close the launcher window silently so the
+                            // installer (or any other tool) can replace files freely.
+                            Close();
+                        }
+                        else
+                        {
+                            var recent = string.Join("\r\n", _recentLogs).Trim();
+                            var detail = string.IsNullOrWhiteSpace(recent) ? "" : "\r\n\r\n" + recent;
+                            SetStatus($"Hermes One-Click server stopped unexpectedly (code {code}).{detail}");
+                        }
+                    }));
+                };
+            }
+
             SetStatus("Opening Hermes One-Click...");
             await InitializeWebViewAsync();
             _webView.Source = new Uri($"http://127.0.0.1:{_port}/");

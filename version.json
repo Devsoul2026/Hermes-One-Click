@@ -1,6 +1,6 @@
 {
-  "version": "0.9.1",
-  "tag": "V0.9.1",
-  "filename": "HermesOneClickSetup-Devsoul-0.9.1.exe",
+  "version": "0.10.0",
+  "tag": "V0.10.0",
+  "filename": "HermesOneClickSetup-Devsoul-0.10.0.exe",
   "changelog": "1. Fixed gateway restart detection on Windows.\n2. Fixed cron job result delivery to chat interface.\n3. Fixed Weixin reply after config reload.\n4. Upgraded hermes-agent to 0.13.0."
 }

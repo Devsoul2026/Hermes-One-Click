@@ -1,7 +1,7 @@
 ; Hermes One-Click — Inno Setup 6: minimal launcher-only installer (no Python/agent copy).
 ; For full bundle see hermes-installer-staging.iss after running scripts/Build-Staging.ps1.
 #define MyAppName "Hermes One-Click"
-#define MyAppVersion "0.1.0-dev"
+#define MyAppVersion "0.10.0-dev"
 #define MyAppPublisher "Hermes One-Click"
 
 [Setup]

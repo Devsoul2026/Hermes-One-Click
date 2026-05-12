@@ -630,6 +630,26 @@ const LOCALES = {
       'If this aligns with your vision, contact us on Feishu to explore building together. Please mention Business cooperation in your add-request or message so we can route and reply faster.',
     business_modal_email_label: 'Email: ',
     about_modal_title: 'About us',
+    feedback_btn_label: 'Report Issue',
+    feedback_btn_title: 'Export logs & submit a bug report',
+    feedback_modal_title: 'Report Issue',
+    feedback_modal_desc: 'Encountered a bug? Follow these two steps to report it so we can locate and fix it quickly.',
+    feedback_step1_title: 'Export Diagnostic Logs',
+    feedback_step1_desc: 'Logs are automatically redacted, cleared daily, and contain no passwords or credentials.',
+    feedback_step2_title: 'Submit Issue Online',
+    feedback_step2_desc: 'Click the button below to open the feedback form in your browser, then attach the exported log file.',
+    feedback_status_loading: 'Loading log status…',
+    feedback_status_size: (mb) => `Current diagnostic log: ~${mb} MB, cleared daily.`,
+    feedback_status_error: (msg) => `Failed to read log status: ${msg}`,
+    feedback_export_btn: 'Export Logs',
+    feedback_exporting: 'Exporting…',
+    feedback_export_success: (filename) => `✓ Exported: ${filename}`,
+    feedback_export_fail: (msg) => `Export failed: ${msg}`,
+    feedback_export_toast_ok: 'Logs exported — click "Submit Issue" to upload them.',
+    feedback_export_toast_fail: (msg) => `Log export failed: ${msg}`,
+    feedback_open_btn: 'Open Feedback Form',
+    feedback_open_toast: 'Feedback form opened in your browser.',
+    feedback_close_btn: 'Close',
     about_brand_name: '\u5192\u7238\u804aAI',
     about_channel_douyin: 'Douyin',
     about_channel_feishu: 'Feishu',
@@ -4963,6 +4983,26 @@ const LOCALES = {
       '若您或您的机构与我们有相同愿景，欢迎通过飞书与我们联系、共探合作。添加或留言时请备注「商务合作」，便于我们尽快与您对接。',
     business_modal_email_label: '邮箱：',
     about_modal_title: '关于我们',
+    feedback_btn_label: '提交问题',
+    feedback_btn_title: '导出日志并提交反馈',
+    feedback_modal_title: '提交问题',
+    feedback_modal_desc: '遇到 Bug 了？按以下两步提交问题，帮助我们快速定位并修复。',
+    feedback_step1_title: '导出诊断日志',
+    feedback_step1_desc: '日志将自动脱敏，每日自动清理，不含任何账号密码。',
+    feedback_step2_title: '在线提交问题',
+    feedback_step2_desc: '点击下方按钮，在浏览器中打开反馈表单，并上传刚才导出的日志文件。',
+    feedback_status_loading: '正在读取日志状态…',
+    feedback_status_size: (mb) => `当前诊断日志约 ${mb} MB，每日自动清理。`,
+    feedback_status_error: (msg) => `读取日志状态失败：${msg}`,
+    feedback_export_btn: '导出日志',
+    feedback_exporting: '正在导出…',
+    feedback_export_success: (filename) => `✓ 已导出：${filename}`,
+    feedback_export_fail: (msg) => `导出失败：${msg}`,
+    feedback_export_toast_ok: '日志已导出，请点击「前往提交问题」上传日志。',
+    feedback_export_toast_fail: (msg) => `日志导出失败：${msg}`,
+    feedback_open_btn: '前往提交问题',
+    feedback_open_toast: '已在浏览器中打开反馈表单。',
+    feedback_close_btn: '关闭',
     about_brand_name: '\u5192\u7238\u804aAI',
     about_channel_douyin: '\u6296\u97f3',
     about_channel_feishu: '\u98de\u4e66',
@@ -8471,6 +8511,14 @@ function syncTitlebarLocaleToggle() {
  */
 function switchTitlebarLocale(lang) {
   setLocale(lang);
+  // Persist to server so the preference survives page reload.
+  // switchTitlebarLocale is always called from a user click (after all scripts
+  // are loaded), so api() is available at this point.
+  try {
+    if (typeof api === 'function') {
+      api('/api/settings', { method: 'POST', body: JSON.stringify({ language: lang }) }).catch(() => {});
+    }
+  } catch (_) {}
 }
 if (typeof window !== 'undefined') {
   window.switchTitlebarLocale = switchTitlebarLocale;
