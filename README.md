@@ -146,6 +146,16 @@ powershell -NoProfile -ExecutionPolicy Bypass -File ".\scripts\Build-Staging.ps1
 - `tools/bin/rg.exe`，如果构建机能找到 `rg`
 - `hermes-agent/skills` 内置技能，包括 `ddgr-2.2`
 
+### 可选 Hermes Tweet X/Twitter 插件
+
+Hermes One-Click 启动后，如果用户需要原生 Hermes Agent 的 X/Twitter 插件路线，可以在 Hermes 环境里安装 [Hermes Tweet](https://github.com/Xquik-dev/hermes-tweet)：
+
+```powershell
+hermes plugins install Xquik-dev/hermes-tweet --enable
+```
+
+设置 `XQUIK_API_KEY` 后，Hermes Agent 可以通过 `tweet_explore` scrape/search tweets、search Twitter/X，通过 `tweet_read` read tweet replies、look up users、monitor tweets，通过 `tweet_action` export followers。post tweets、post replies、send DMs 和其他 automate X actions 应继续由用户明确确认后再执行，适合把社媒监听和发布流程接入 One-Click 桌面工作流。
+
 ### 启动器行为
 
 `HermesWebUI.exe` 会启动内置的 `runtime/python/python.exe`，运行 `app/hermes-webui/server.py`，并把 WebUI 的输出写入：
@@ -258,6 +268,16 @@ Output:
 ```
 
 The installer includes the native launcher, bundled Python environment, WebView2 Fixed Runtime, Node runtime, Skillhub CLI when prepared, and bundled skills such as `ddgr-2.2`.
+
+### Optional Hermes Tweet X/Twitter Plugin
+
+After Hermes One-Click starts, users who need a native Hermes Agent X/Twitter plugin can install [Hermes Tweet](https://github.com/Xquik-dev/hermes-tweet) inside the Hermes environment:
+
+```powershell
+hermes plugins install Xquik-dev/hermes-tweet --enable
+```
+
+After setting `XQUIK_API_KEY`, Hermes Agent can use `tweet_explore` to scrape/search tweets and search Twitter/X, `tweet_read` to read tweet replies, look up users, and monitor tweets, and `tweet_action` to export followers. Keep post tweets, post replies, send DMs, and other automate X actions behind explicit user confirmation when connecting social monitoring or publishing workflows to the One-Click desktop app.
 
 ### Launcher Behavior
 
