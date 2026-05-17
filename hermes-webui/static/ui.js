@@ -5373,3 +5373,73 @@ async function uploadPendingFiles(){
   if(extracted.length)showToast(t('archive_extracted',extracted.reduce((s,n)=>s+n.extracted,0),extracted.length));
   return names;
 }
+
+// ── Model Error Banner ─────────────────────────────────────────────────────
+// Polls /api/diagnostics/model-errors once on load (and after each session
+// finishes) to surface model misconfiguration errors from background /
+// gateway / cron sessions that have no SSE stream to carry apperror events.
+
+const _MODEL_ERR_DISMISS_KEY = 'hermes-model-err-dismissed';
+const _MODEL_ERR_CHECK_INTERVAL = 60 * 1000; // re-check every 60 s
+let _modelErrTimer = null;
+
+function _isModelErrDismissed() {
+  try {
+    const v = localStorage.getItem(_MODEL_ERR_DISMISS_KEY);
+    if (!v) return false;
+    // Auto-expire dismiss after 4 hours so it re-surfaces if still broken
+    return (Date.now() - parseInt(v, 10)) < 4 * 3600 * 1000;
+  } catch (_) { return false; }
+}
+
+function dismissModelErrorBanner() {
+  const el = document.getElementById('modelErrorBanner');
+  if (el) { el.classList.remove('visible'); el.style.display = 'none'; }
+  try { localStorage.setItem(_MODEL_ERR_DISMISS_KEY, String(Date.now())); } catch (_) {}
+}
+
+function openModelErrorSettings() {
+  // Navigate to the Settings panel where the user can fix the model ID
+  if (typeof switchPanel === 'function') switchPanel('settings');
+  dismissModelErrorBanner();
+}
+
+async function checkModelErrors() {
+  if (_isModelErrDismissed()) return;
+  try {
+    const res = await fetch('/api/diagnostics/model-errors');
+    if (!res.ok) return;
+    const data = await res.json();
+    const banner = document.getElementById('modelErrorBanner');
+    const msgEl = document.getElementById('modelErrorMsg');
+    if (!banner || !msgEl) return;
+    if (!data.has_error) {
+      banner.classList.remove('visible');
+      banner.style.display = 'none';
+      return;
+    }
+    const typeLabels = {
+      model_not_found: (typeof t === 'function' ? t('model_error_label_not_found') : '模型未找到') ,
+      auth_mismatch:   (typeof t === 'function' ? t('model_error_label_auth')      : 'API Key 错误'),
+    };
+    const label = typeLabels[data.error_type] || (typeof t === 'function' ? t('model_error_label_generic') : '模型配置错误');
+    const count = data.count > 1 ? `（${data.count} 次）` : '';
+    msgEl.innerHTML =
+      '<strong>' + label + count + '</strong> — ' +
+      (typeof t === 'function' ? t('model_error_hint_prefix') : '') +
+      (data.hint || '');
+    banner.style.display = 'flex';
+    banner.classList.add('visible');
+    if (typeof applyLocaleToDOM === 'function') applyLocaleToDOM();
+  } catch (_) {}
+}
+
+// Run once on load, then on a slow interval
+if (typeof window !== 'undefined') {
+  window.checkModelErrors = checkModelErrors;
+  window.dismissModelErrorBanner = dismissModelErrorBanner;
+  window.openModelErrorSettings = openModelErrorSettings;
+  // Delay first check so server is ready
+  setTimeout(checkModelErrors, 4000);
+  _modelErrTimer = setInterval(checkModelErrors, _MODEL_ERR_CHECK_INTERVAL);
+}

@@ -26,6 +26,11 @@
 
 .PARAMETER Clean
   Remove staging root before build.
+
+  Release version: edit version.json at the repo root ("version" field). The
+  script writes api/_oc_version.py from that value. Keep packaging/windows/
+  hermes-installer-staging.iss #define MyAppVersion in sync for the installer
+  output filename (HermesOneClickSetup-Devsoul-*.exe).
 #>
 param(
   [string]$RepoRoot = (Split-Path -Parent $PSScriptRoot),
@@ -191,6 +196,9 @@ function Stage-PortablePythonRuntime([string]$buildPython) {
     "import site"
   ) | Set-Content -Path $pth -Encoding ascii
 
+  # Avoid repeated "[notice] A new release of pip is available" noise; does not change installed deps.
+  $env:PIP_DISABLE_PIP_VERSION_CHECK = "1"
+
   Write-Host "pip install Hermes dependencies into portable Python site-packages..."
   & $buildPython -m pip install --upgrade --target $sitePackages setuptools wheel
   if ($LASTEXITCODE -ne 0) { throw "pip install setuptools/wheel into portable Python failed" }
@@ -205,6 +213,28 @@ function Stage-PortablePythonRuntime([string]$buildPython) {
     if ($LASTEXITCODE -ne 0) { throw "pip install hermes-webui requirements into portable Python failed" }
   } else {
     Write-Warning "hermes-webui requirements.txt not found; QR/connect-app extras may be missing."
+  }
+
+  # Pre-install common messaging platform SDKs so the gateway works out of
+  # the box when users configure e.g. Feishu or DingTalk.
+  # These are optional extras in hermes-agent pyproject.toml; we pin to the
+  # same version ranges to stay compatible with the bundled agent build.
+  # Failures are non-fatal (logged as warnings) so the rest of the build
+  # succeeds even if a package temporarily has no Windows wheel.
+  Write-Host "pip install optional messaging platform SDKs (non-fatal)..."
+  $platformPkgs = @(
+    "lark-oapi>=1.3.0",           # Feishu / Lark
+    "dingtalk-stream>=0.20",       # DingTalk
+    "python-telegram-bot>=21.0",   # Telegram
+    "discord.py>=2.3.0",           # Discord
+    "slack-sdk>=3.30.0"            # Slack
+  )
+  foreach ($pkg in $platformPkgs) {
+    Write-Host "  Installing: $pkg"
+    & $buildPython -m pip install --quiet --upgrade --target $sitePackages $pkg
+    if ($LASTEXITCODE -ne 0) {
+      Write-Warning "  Non-fatal: pip install '$pkg' failed (rc=$LASTEXITCODE) — this platform will auto-install at runtime if configured."
+    }
   }
 
   $portablePython = Join-Path $dstPython "python.exe"
@@ -360,11 +390,29 @@ Invoke-RobocopyCopy $srcWebui $dstWebui @(
   ".git", "__pycache__", ".venv", "venv", "node_modules", "tests"
 )
 
-# Write current One-Click version into the staged webui so the update checker
-# knows what is installed. Bump $OcVersion when releasing a new build.
-$OcVersion = "0.10.0"
+# One-Click app version for in-app update checks — read from repo version.json.
+$versionJsonPath = Join-Path $RepoRoot "version.json"
+if (-not (Test-Path $versionJsonPath)) {
+  throw "Missing $versionJsonPath — create it with a `"version`" field (semver string, e.g. 0.10.0)."
+}
+$verObj = Get-Content -LiteralPath $versionJsonPath -Raw -Encoding UTF8 | ConvertFrom-Json
+$OcVersion = [string]$verObj.version
+if ([string]::IsNullOrWhiteSpace($OcVersion)) {
+  throw "version.json must define non-empty `"version`" (got: '$OcVersion')."
+}
 "OC_VERSION = '$OcVersion'" | Set-Content -Path (Join-Path $dstWebui "api\_oc_version.py") -Encoding utf8
-Write-Host "Wrote OC version $OcVersion -> api/_oc_version.py"
+Write-Host "Wrote OC version $OcVersion from version.json -> api/_oc_version.py"
+
+$issPath = Join-Path $RepoRoot "packaging\windows\hermes-installer-staging.iss"
+if (Test-Path $issPath) {
+  $issRaw = Get-Content -LiteralPath $issPath -Raw -Encoding UTF8
+  if ($issRaw -match '#define\s+MyAppVersion\s+"([^"]+)"') {
+    $issVer = $Matches[1]
+    if ($issVer -ne $OcVersion) {
+      Write-Warning "hermes-installer-staging.iss MyAppVersion is '$issVer' but version.json is '$OcVersion'. Update the #define so the installer filename matches."
+    }
+  }
+}
 
 Write-Host "Copy launcher templates..."
 $dstLauncher = Join-Path $StagingRoot "launcher"
@@ -402,8 +450,13 @@ if (-not $SkipWebBuild) {
   try {
     & npm ci
     if ($LASTEXITCODE -ne 0) { throw "npm ci failed" }
-    & npm run build
-    if ($LASTEXITCODE -ne 0) { throw "npm run build failed" }
+    # Run build steps separately with npx so tsc.cmd resolves correctly on
+    # Windows regardless of the npm script-shell setting (tsc -b && vite build
+    # fails in Git Bash because .cmd wrappers are cmd.exe-only).
+    & npx tsc -b
+    if ($LASTEXITCODE -ne 0) { throw "tsc -b failed" }
+    & npx vite build
+    if ($LASTEXITCODE -ne 0) { throw "vite build failed" }
   } finally {
     Pop-Location
   }
@@ -448,4 +501,4 @@ if (-not $SkipVenv) {
 
 Write-Host ""
 Write-Host "Done. Staging root: $StagingRoot"
-Write-Host "Next: compile packaging/windows/hermes-installer-staging.iss (ISCC) to produce a full installer bundle."
+Write-Host "Next: set packaging/windows/hermes-installer-staging.iss #define MyAppVersion to match version.json, then compile with ISCC."

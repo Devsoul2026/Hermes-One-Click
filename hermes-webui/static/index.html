@@ -113,7 +113,7 @@
     </a>
     <button type="button" class="app-titlebar-version-btn" id="btnLogs" onclick="openLogsModal()" data-i18n-title="feedback_btn_title" title=""><span data-i18n="feedback_btn_label">提交问题</span></button>
     <button type="button" class="app-titlebar-version-btn" id="btnAboutUs" onclick="openAboutModal()" data-i18n="titlebar_about_us" data-i18n-title="titlebar_about_hint" title="About Hermes open-source components">About us</button>
-    <button type="button" class="app-titlebar-version-btn" id="btnBusinessCoop" onclick="openBusinessCoopModal()" data-i18n="titlebar_business_coop" data-i18n-title="titlebar_business_coop_hint" title="Business cooperation">Business cooperation</button>
+    <button type="button" class="app-titlebar-version-btn skill-market-btn" id="btnSkillMarket" onclick="openSkillMarket()" data-i18n="titlebar_skill_market" data-i18n-title="titlebar_skill_market_hint" title="Skill Market">技能市场</button>
     <button type="button" class="app-titlebar-version-btn" id="btnViewAgentVersion" onclick="openAgentVersionModal()" data-i18n-title="oc_btn_hint" title="检查 Hermes One-Click 更新"><span data-i18n="oc_btn_label">更新</span><span id="titlebarAgentSemver" class="app-titlebar-agent-semver" hidden aria-hidden="true"></span></button>
     <div class="app-titlebar-lang" role="group" aria-label="Language">
       <button type="button" class="app-titlebar-lang-btn" id="titlebarLangEn" onclick="switchTitlebarLocale('en')" aria-pressed="false" title="English">EN</button>
@@ -124,7 +124,7 @@
       <div class="titlebar-dropdown" id="titlebarDropdown">
         <button type="button" class="titlebar-dd-btn" onclick="closeTitlebarDropdown();openLogsModal()" data-i18n-title="feedback_btn_title" data-i18n="feedback_btn_label" title="">提交问题</button>
         <button type="button" class="titlebar-dd-btn" onclick="closeTitlebarDropdown();openAboutModal()" data-i18n="titlebar_about_us">About us</button>
-        <button type="button" class="titlebar-dd-btn" onclick="closeTitlebarDropdown();openBusinessCoopModal()" data-i18n="titlebar_business_coop">Business</button>
+        <button type="button" class="titlebar-dd-btn" onclick="closeTitlebarDropdown();openSkillMarket()" data-i18n="titlebar_skill_market">技能市场</button>
         <button type="button" class="titlebar-dd-btn" onclick="closeTitlebarDropdown();openAgentVersionModal()" data-i18n="oc_btn_label">更新</button>
         <a class="titlebar-dd-btn" href="https://github.com/Devsoul2026/Hermes-One-Click" target="_blank" rel="noopener noreferrer">GitHub</a>
         <button type="button" class="titlebar-dd-btn" onclick="closeTitlebarDropdown();switchTitlebarLocale('en')" id="titlebarDdLangEn">EN</button>
@@ -344,6 +344,17 @@
       <div style="display:flex;gap:8px;flex-shrink:0">
         <button class="reconnect-btn" onclick="dismissReconnect()">Dismiss</button>
         <button class="reconnect-btn" onclick="refreshSession()"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" style="vertical-align:-1px"><polyline points="23 4 23 10 17 10"/><polyline points="1 20 1 14 7 14"/><path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"/></svg> Reload</button>
+      </div>
+    </div>
+    <!-- Model error warning banner — shown when recent sessions contain model config errors -->
+    <div class="model-error-banner" id="modelErrorBanner" style="display:none" role="alert" aria-live="polite">
+      <span class="model-error-banner-icon" aria-hidden="true">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>
+      </span>
+      <span id="modelErrorMsg" class="model-error-banner-msg"></span>
+      <div style="display:flex;gap:8px;flex-shrink:0">
+        <button class="model-error-banner-btn" onclick="openModelErrorSettings()" data-i18n="model_error_fix_btn">去设置</button>
+        <button class="model-error-banner-btn model-error-banner-dismiss" onclick="dismissModelErrorBanner()" data-i18n="model_error_dismiss_btn">忽略</button>
       </div>
     </div>
     <div class="composer-wrap" id="composerWrap">
@@ -1081,6 +1092,11 @@
       <textarea id="previewEditArea" style="display:none;flex:1;width:100%;background:var(--code-bg);color:var(--pre-text);border:1px solid var(--border2);border-radius:8px;padding:12px;font-family:'SF Mono',ui-monospace,monospace;font-size:12px;line-height:1.6;resize:none;outline:none" oninput="_previewDirty=true;updateEditBtn()"></textarea>
     </div>
   </aside>
+  <!-- Right-side workspace drawer pull-tab — always visible on desktop when panel is closed -->
+  <button id="wsDrawerPullTab" class="ws-pull-tab" onclick="toggleWorkspacePanel()" aria-label="Open workspace files">
+    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/></svg>
+    <span class="ws-pull-tab-label" data-i18n="workspace_files_title">文件</span>
+  </button>
 </div>
 <div class="onboarding-overlay" id="onboardingOverlay" style="display:none" role="dialog" aria-modal="true" aria-labelledby="onboardingTitle">
   <div class="onboarding-card">

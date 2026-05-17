@@ -20,13 +20,13 @@ function _renderProviderSelectOptions(selectedId){
   providers.forEach(p=>{provMap[p.id]=p;});
   if(!categories.length){
     // Fallback: flat list when no categories are available.
-    return providers.map(p=>`<option value="${esc(p.id)}">${esc(p.label)}${p.quick?' — '+esc(t('onboarding_quick_setup_badge')):''}</option>`).join('');
+    return providers.map(p=>`<option value="${esc(p.id)}">${esc(t('provider_label_'+p.id)||p.label)}${p.quick?' — '+esc(t('onboarding_quick_setup_badge')):''}</option>`).join('');
   }
   return categories.map(cat=>{
     const opts=cat.providers.map(pid=>{
       const p=provMap[pid];
       if(!p)return '';
-      return `<option value="${esc(p.id)}"${p.id===selectedId?' selected':''}>${esc(p.label)}${p.quick?' — '+esc(t('onboarding_quick_setup_badge')):''}</option>`;
+      return `<option value="${esc(p.id)}"${p.id===selectedId?' selected':''}>${esc(t('provider_label_'+p.id)||p.label)}${p.quick?' — '+esc(t('onboarding_quick_setup_badge')):''}</option>`;
     }).join('');
     return `<optgroup label="${esc(t('provider_category_'+cat.id)||cat.label)}">${opts}</optgroup>`;
   }).join('');

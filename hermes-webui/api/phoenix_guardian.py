@@ -62,6 +62,10 @@ class PhoenixConfig:
     restart_backoff_base_secs: float = 5.0
     restart_backoff_max_secs: float = 300.0
     enabled: bool = True
+    # How many seconds after a (re)start we suppress "not running" health check
+    # failures.  The gateway takes several seconds to acquire its lock file;
+    # restarting again during that window creates duplicate processes.
+    startup_grace_secs: float = 20.0
 
 
 @dataclass
@@ -111,6 +115,10 @@ class PhoenixGuardian:
         self._subscribers: List[queue.Queue] = []
         self._sub_lock = threading.Lock()
         self._events: List[PhoenixEvent] = []
+        # Timestamp until which health-check failures are suppressed (startup grace).
+        # Set to now+grace whenever we (re)start the gateway so we don't immediately
+        # try to restart the brand-new process before it has acquired its lock file.
+        self._grace_until: float = 0.0
 
     @property
     def state(self) -> Dict[str, Any]:
@@ -201,11 +209,16 @@ class PhoenixGuardian:
         if self._thread and self._thread.is_alive():
             return
         self._stop_event.clear()
+        # Apply startup grace so we don't immediately restart the gateway that
+        # the _gateway_autostart_worker in server.py is about to launch.
+        with self._lock:
+            grace = self._state.config.startup_grace_secs
+        self._grace_until = time.time() + grace
         self._thread = threading.Thread(
             target=self._monitor_loop, daemon=True, name="phoenix-guardian"
         )
         self._thread.start()
-        logger.info("[phoenix] Guardian started")
+        logger.info("[phoenix] Guardian started (startup grace %.0fs)", grace)
 
     def stop(self) -> None:
         self._stop_event.set()
@@ -310,6 +323,19 @@ class PhoenixGuardian:
                         )
                     )
                 else:
+                    # Suppress false-negative crashes during the startup grace window.
+                    # The gateway takes 5-15 s to write its lock file; re-launching
+                    # it before that happens creates duplicate instances that fail with
+                    # "Gateway runtime lock is already held by another instance."
+                    in_grace = time.time() < self._grace_until
+                    if in_grace:
+                        logger.debug(
+                            "[phoenix] Health check failed but in startup grace window "
+                            "(%.0fs remaining), suppressing crash",
+                            self._grace_until - time.time(),
+                        )
+                        self._stop_event.wait(self.POLL_INTERVAL)
+                        continue
                     if was_running:
                         self._handle_crash()
                         was_running = False
@@ -438,6 +464,11 @@ class PhoenixGuardian:
 
             result = try_full_restart_gateway()
             if result.get("restarted") or result.get("started"):
+                # Set grace window so we don't immediately declare the freshly
+                # started process as crashed before it acquires its lock file.
+                with self._lock:
+                    grace = self._state.config.startup_grace_secs
+                self._grace_until = time.time() + grace
                 return {
                     "ok": True,
                     "pid": result.get("pid"),

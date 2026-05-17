@@ -2081,12 +2081,27 @@ function _renderWorkspaceDetail(ws){
           <div style="color:var(--muted);font-size:12px;padding:8px 0">${esc(t('checkpoint_loading'))}</div>
         </div>
       </div>
+      <!-- File browser drawer -->
+      <div class="detail-card ws-filebrowser-card" style="margin-top:12px" id="wsFileBrowserCard">
+        <div class="detail-card-title ws-filebrowser-toggle" onclick="_toggleWsFileBrowser()" style="cursor:pointer;user-select:none;display:flex;align-items:center;justify-content:space-between">
+          <span>${esc(t('workspace_files_title') || '工作区文件')}</span>
+          <span id="wsFileBrowserChevron" style="transition:transform .2s ease;display:flex;align-items:center">
+            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 12 15 18 9"/></svg>
+          </span>
+        </div>
+        <div id="wsFileBrowserBody" style="display:none;margin-top:8px"></div>
+      </div>
     </div>`;
   body.style.display = '';
   if (empty) empty.style.display = 'none';
   _workspaceMode = 'read';
   _setWorkspaceHeaderButtons('read', ws);
   _loadCheckpoints(ws.path);
+  // Reset file browser drawer to closed state when switching workspaces
+  const fbBody = $('wsFileBrowserBody');
+  const fbChevron = $('wsFileBrowserChevron');
+  if (fbBody) { fbBody.style.display = 'none'; fbBody.innerHTML = ''; }
+  if (fbChevron) fbChevron.style.transform = '';
 }
 
 function _setWorkspaceHeaderButtons(mode, ws){
@@ -2121,6 +2136,86 @@ function openWorkspaceDetail(path, el){
   if (target) target.classList.add('active');
   _workspacePreFormDetail = null;
   _renderWorkspaceDetail(ws);
+}
+
+// ── Workspace file browser drawer ─────────────────────────────────────────────
+let _wsFileBrowserOpen = false;
+
+async function _loadWsFileBrowser(wsPath, relPath) {
+  const body = $('wsFileBrowserBody');
+  if (!body) return;
+  relPath = relPath || '.';
+  body.innerHTML = `<div style="color:var(--muted);font-size:12px;padding:6px 0">${esc(t('loading') || 'Loading...')}</div>`;
+  try {
+    const res = await fetch('/api/workspace/browse?' + new URLSearchParams({ path: wsPath, rel: relPath }));
+    if (!res.ok) throw new Error(res.statusText);
+    const data = await res.json();
+    const entries = data.entries || [];
+    if (!entries.length) {
+      body.innerHTML = `<div style="color:var(--muted);font-size:12px;padding:6px 0">${esc(t('workspace_files_empty') || '目录为空')}</div>`;
+      return;
+    }
+    // Breadcrumb for sub-navigation
+    let breadcrumb = '';
+    if (relPath && relPath !== '.') {
+      const parts = relPath.split('/');
+      breadcrumb = `<div style="font-size:11px;color:var(--muted);margin-bottom:6px;display:flex;align-items:center;gap:4px;flex-wrap:wrap">
+        <span style="cursor:pointer;color:var(--accent)" onclick="_loadWsFileBrowser(${JSON.stringify(wsPath)},'.')">.</span>`;
+      let acc = '';
+      for (const p of parts) {
+        acc = acc ? acc + '/' + p : p;
+        const accCopy = acc;
+        breadcrumb += `<span style="color:var(--muted)">/</span>
+          <span style="cursor:pointer;color:var(--accent)" onclick="_loadWsFileBrowser(${JSON.stringify(wsPath)},${JSON.stringify(accCopy)})">${esc(p)}</span>`;
+      }
+      breadcrumb += '</div>';
+    }
+    const rows = entries.slice(0, 100).map(e => {
+      const icon = e.type === 'dir' || e.is_dir
+        ? `<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/></svg>`
+        : `<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/></svg>`;
+      const isDir = e.type === 'dir' || e.is_dir;
+      const clickAttr = isDir
+        ? `onclick="_loadWsFileBrowser(${JSON.stringify(wsPath)},${JSON.stringify(e.path)})" style="cursor:pointer"`
+        : '';
+      const sizeStr = (!isDir && e.size != null)
+        ? `<span style="color:var(--muted);font-size:11px;margin-left:auto;flex-shrink:0">${_fmtSize(e.size)}</span>` : '';
+      return `<div class="ws-fb-row" ${clickAttr}>
+        <span style="color:var(--muted);flex-shrink:0">${icon}</span>
+        <span style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap;flex:1" title="${esc(e.name)}">${esc(e.name)}</span>
+        ${sizeStr}
+      </div>`;
+    }).join('');
+    const more = entries.length > 100
+      ? `<div style="font-size:11px;color:var(--muted);padding:4px 0">${esc(t('workspace_files_more') || `...还有 ${entries.length - 100} 个项目`)}</div>` : '';
+    body.innerHTML = breadcrumb + `<div class="ws-fb-list">${rows}</div>${more}`;
+  } catch (e) {
+    body.innerHTML = `<div style="color:var(--error,#e05);font-size:12px;padding:6px 0">${esc(String(e))}</div>`;
+  }
+}
+
+function _fmtSize(bytes) {
+  if (bytes == null) return '';
+  if (bytes < 1024) return bytes + ' B';
+  if (bytes < 1024 * 1024) return (bytes / 1024).toFixed(1) + ' KB';
+  return (bytes / (1024 * 1024)).toFixed(1) + ' MB';
+}
+
+function _toggleWsFileBrowser() {
+  const body = $('wsFileBrowserBody');
+  const chevron = $('wsFileBrowserChevron');
+  if (!body || !_currentWorkspaceDetail) return;
+  _wsFileBrowserOpen = body.style.display === 'none';
+  if (_wsFileBrowserOpen) {
+    body.style.display = '';
+    if (chevron) chevron.style.transform = 'rotate(180deg)';
+    if (!body.innerHTML.trim() || body.innerHTML.includes('Loading')) {
+      _loadWsFileBrowser(_currentWorkspaceDetail.path, '.');
+    }
+  } else {
+    body.style.display = 'none';
+    if (chevron) chevron.style.transform = '';
+  }
 }
 
 function _clearWorkspaceDetail(){
@@ -3963,12 +4058,28 @@ function startCronPolling(){
         for(const c of data.completions){
           _cronPollSince=Math.max(_cronPollSince,c.completed_at);
           if(c.job_id) _cronNewJobIds.add(String(c.job_id));
+
+          // Skip delivery attempt when we already know there is no output.
+          if(c.has_output===false){
+            const label=typeof t==='function'?t('cron_failed_no_output',c.name||c.job_id)
+              :`定时任务 "${c.name||c.job_id}" 执行失败（无输出）。可能是模型配置错误，请检查设置。`;
+            showToast(label,8000,'error');
+            continue;
+          }
+
           // Deliver cron result into the chat UI as a new session.
           try{
             const r=await api('/api/crons/deliver-to-chat',{method:'POST',body:JSON.stringify({job_id:c.job_id})});
             if(r&&r.session_id){
               if(typeof renderSessionList==='function') await renderSessionList();
               if(typeof loadSession==='function') await loadSession(r.session_id);
+            }else if(r&&r.delivered===false){
+              // Backend returned structured failure (model error, empty output, etc.)
+              const reason=r.reason||'unknown';
+              const hint=reason==='no_output'
+                ?(typeof t==='function'?t('cron_failed_no_output',c.name||c.job_id):`定时任务 "${c.name||c.job_id}" 执行失败，未产生输出。请检查模型配置。`)
+                :(typeof t==='function'?t('cron_failed_generic',c.name||c.job_id):`定时任务 "${c.name||c.job_id}" 执行失败。`);
+              showToast(hint,8000,'error');
             }else{
               const header=t('cron_completion_status',c.name,c.status==='error'?t('status_failed'):t('status_completed'));
               const body2=c.snippet?String(c.snippet).trim():'';

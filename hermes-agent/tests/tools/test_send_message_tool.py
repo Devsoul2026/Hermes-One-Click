@@ -182,6 +182,81 @@ class TestSendMessageTool:
             force_document=False,
         )
 
+    def test_resolved_slack_thread_name_preserves_thread_id(self):
+        slack_cfg = SimpleNamespace(enabled=True, token="xoxb-test", extra={})
+        config = SimpleNamespace(
+            platforms={Platform.SLACK: slack_cfg},
+            get_home_channel=lambda _platform: None,
+        )
+
+        with patch("gateway.config.load_gateway_config", return_value=config), \
+             patch("tools.interrupt.is_interrupted", return_value=False), \
+             patch("gateway.channel_directory.resolve_channel_name", return_value="C123ABCDEF:171.000001"), \
+             patch("model_tools._run_async", side_effect=_run_async_immediately), \
+             patch("tools.send_message_tool._send_to_platform", new=AsyncMock(return_value={"success": True})) as send_mock, \
+             patch("gateway.mirror.mirror_to_session", return_value=True):
+            result = json.loads(
+                send_message_tool(
+                    {
+                        "action": "send",
+                        "target": "slack:ops / topic 171.000001",
+                        "message": "hello",
+                    }
+                )
+            )
+
+        assert result["success"] is True
+        send_mock.assert_awaited_once_with(
+            Platform.SLACK,
+            slack_cfg,
+            "C123ABCDEF",
+            "hello",
+            thread_id="171.000001",
+            media_files=[],
+            force_document=False,
+        )
+
+    def test_resolved_matrix_thread_name_preserves_thread_id(self):
+        matrix_cfg = SimpleNamespace(
+            enabled=True,
+            token="tok",
+            extra={"homeserver": "https://matrix.example.com"},
+        )
+        config = SimpleNamespace(
+            platforms={Platform.MATRIX: matrix_cfg},
+            get_home_channel=lambda _platform: None,
+        )
+
+        with patch("gateway.config.load_gateway_config", return_value=config), \
+             patch("tools.interrupt.is_interrupted", return_value=False), \
+             patch(
+                 "gateway.channel_directory.resolve_channel_name",
+                 return_value="!roomid:matrix.example.org:$thread123:matrix.example.org",
+             ), \
+             patch("model_tools._run_async", side_effect=_run_async_immediately), \
+             patch("tools.send_message_tool._send_to_platform", new=AsyncMock(return_value={"success": True})) as send_mock, \
+             patch("gateway.mirror.mirror_to_session", return_value=True):
+            result = json.loads(
+                send_message_tool(
+                    {
+                        "action": "send",
+                        "target": "matrix:Ops / topic $thread123",
+                        "message": "hello",
+                    }
+                )
+            )
+
+        assert result["success"] is True
+        send_mock.assert_awaited_once_with(
+            Platform.MATRIX,
+            matrix_cfg,
+            "!roomid:matrix.example.org",
+            "hello",
+            thread_id="$thread123:matrix.example.org",
+            media_files=[],
+            force_document=False,
+        )
+
     def test_mirror_receives_current_session_user_id(self):
         config, _telegram_cfg = _make_config()
 
@@ -503,9 +578,8 @@ class TestSendToPlatformChunking:
         assert all(call == [] for call in sent_calls[:-1])
         assert sent_calls[-1] == media
 
-    def test_matrix_media_uses_native_adapter_helper(self):
-
-        doc_path = Path("/tmp/test-send-message-matrix.pdf")
+    def test_matrix_media_uses_native_adapter_helper(self, tmp_path):
+        doc_path = tmp_path / "test-send-message-matrix.pdf"
         doc_path.write_bytes(b"%PDF-1.4 test")
 
         try:
@@ -847,6 +921,16 @@ class TestParseTargetRefDiscord:
 class TestParseTargetRefMatrix:
     """_parse_target_ref correctly handles Matrix room IDs and user MXIDs."""
 
+    def test_matrix_thread_target_is_explicit(self):
+        """Session-derived Matrix thread targets round-trip as room + event id."""
+        chat_id, thread_id, is_explicit = _parse_target_ref(
+            "matrix",
+            "!HLOQwxYGgFPMPJUSNR:matrix.org:$thread123:matrix.org",
+        )
+        assert chat_id == "!HLOQwxYGgFPMPJUSNR:matrix.org"
+        assert thread_id == "$thread123:matrix.org"
+        assert is_explicit is True
+
     def test_matrix_room_id_is_explicit(self):
         """Matrix room IDs (!) are recognized as explicit targets."""
         chat_id, thread_id, is_explicit = _parse_target_ref("matrix", "!HLOQwxYGgFPMPJUSNR:matrix.org")
@@ -918,6 +1002,12 @@ class TestParseTargetRefE164:
 
 class TestParseTargetRefSlack:
     """_parse_target_ref recognizes Slack channel/user IDs as explicit."""
+
+    def test_thread_target_is_explicit(self):
+        chat_id, thread_id, is_explicit = _parse_target_ref("slack", "C0B0QV5434G:171.000001")
+        assert chat_id == "C0B0QV5434G"
+        assert thread_id == "171.000001"
+        assert is_explicit is True
 
     def test_public_channel_id_is_explicit(self):
         chat_id, thread_id, is_explicit = _parse_target_ref("slack", "C0B0QV5434G")
@@ -2229,3 +2319,106 @@ class TestSendViaAdapterStandaloneFallback:
         assert result["success"] is True
         assert result["message_id"] == "abc-123"
         assert result["extra_field"] == "preserved"
+
+
+# ---------------------------------------------------------------------------
+# _check_send_message — availability gating
+# ---------------------------------------------------------------------------
+
+class TestCheckSendMessage:
+    """The tool's check_fn governs whether the model sees ``send_message`` as
+    callable for a given session. The four passing conditions are:
+
+    1. ``HERMES_KANBAN_TASK`` is set (worker spawned by the kanban dispatcher
+       — parent gateway is by definition running, but the worker's
+       ``HERMES_HOME`` may be a profile dir without a ``gateway.pid``).
+    2. ``HERMES_SESSION_PLATFORM`` resolves to a non-empty, non-``local`` value
+       (the session is wired to a messaging platform like Telegram).
+    3. ``is_gateway_running()`` returns True (CLI / orchestrator profile with
+       a live gateway colocated under the same ``HERMES_HOME``).
+    4. None of the above → False, tool is hidden.
+    """
+
+    def test_kanban_task_env_grants_access(self, monkeypatch):
+        """Workers spawned by the dispatcher (HERMES_KANBAN_TASK set) must be
+        allowed regardless of session_platform / gateway-pid state."""
+        from tools.send_message_tool import _check_send_message
+
+        monkeypatch.setenv("HERMES_KANBAN_TASK", "t_abc12345")
+        monkeypatch.delenv("HERMES_SESSION_PLATFORM", raising=False)
+
+        with patch("gateway.session_context.get_session_env", return_value=""), \
+             patch("gateway.status.is_gateway_running", return_value=False):
+            assert _check_send_message() is True
+
+    def test_kanban_task_env_short_circuits_before_gateway_check(self, monkeypatch):
+        """Honoring HERMES_KANBAN_TASK must not depend on importing or calling
+        gateway.status — the worker may run with a HERMES_HOME that has no
+        gateway.pid, and we don't want that import path to be load-bearing."""
+        from tools.send_message_tool import _check_send_message
+
+        monkeypatch.setenv("HERMES_KANBAN_TASK", "t_abc12345")
+
+        with patch("gateway.session_context.get_session_env",
+                   side_effect=AssertionError("session_context not consulted "
+                                              "when HERMES_KANBAN_TASK is set")), \
+             patch("gateway.status.is_gateway_running",
+                   side_effect=AssertionError("gateway.status not consulted "
+                                              "when HERMES_KANBAN_TASK is set")):
+            assert _check_send_message() is True
+
+    def test_messaging_platform_session_grants_access(self, monkeypatch):
+        """Telegram/Discord/etc. sessions pass via the platform branch even
+        without HERMES_KANBAN_TASK."""
+        from tools.send_message_tool import _check_send_message
+
+        monkeypatch.delenv("HERMES_KANBAN_TASK", raising=False)
+
+        with patch("gateway.session_context.get_session_env", return_value="telegram"), \
+             patch("gateway.status.is_gateway_running", return_value=False):
+            assert _check_send_message() is True
+
+    def test_local_platform_falls_through_to_gateway_check(self, monkeypatch):
+        """``HERMES_SESSION_PLATFORM=local`` means CLI-style — must defer to
+        is_gateway_running() rather than auto-grant."""
+        from tools.send_message_tool import _check_send_message
+
+        monkeypatch.delenv("HERMES_KANBAN_TASK", raising=False)
+
+        with patch("gateway.session_context.get_session_env", return_value="local"), \
+             patch("gateway.status.is_gateway_running", return_value=True) as gw_mock:
+            assert _check_send_message() is True
+            gw_mock.assert_called_once()
+
+    def test_running_gateway_grants_access(self, monkeypatch):
+        """Plain CLI session (no kanban task, empty platform) with a live
+        gateway: tool is callable."""
+        from tools.send_message_tool import _check_send_message
+
+        monkeypatch.delenv("HERMES_KANBAN_TASK", raising=False)
+
+        with patch("gateway.session_context.get_session_env", return_value=""), \
+             patch("gateway.status.is_gateway_running", return_value=True):
+            assert _check_send_message() is True
+
+    def test_no_signals_means_unavailable(self, monkeypatch):
+        """No kanban task, no platform, no gateway: tool is hidden."""
+        from tools.send_message_tool import _check_send_message
+
+        monkeypatch.delenv("HERMES_KANBAN_TASK", raising=False)
+
+        with patch("gateway.session_context.get_session_env", return_value=""), \
+             patch("gateway.status.is_gateway_running", return_value=False):
+            assert _check_send_message() is False
+
+    def test_gateway_status_import_error_is_swallowed(self, monkeypatch):
+        """If gateway.status can't be imported (unusual deployment / partial
+        install), the check returns False rather than raising."""
+        from tools.send_message_tool import _check_send_message
+
+        monkeypatch.delenv("HERMES_KANBAN_TASK", raising=False)
+
+        with patch("gateway.session_context.get_session_env", return_value=""), \
+             patch("gateway.status.is_gateway_running",
+                   side_effect=ImportError("simulated")):
+            assert _check_send_message() is False

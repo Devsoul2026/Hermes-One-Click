@@ -1759,6 +1759,9 @@ def handle_get(handler, parsed) -> bool:
     if parsed.path == "/api/list":
         return _handle_list_dir(handler, parsed)
 
+    if parsed.path == "/api/workspace/browse":
+        return _handle_workspace_browse(handler, parsed)
+
     if parsed.path == "/api/personalities":
         # Read personalities from config.yaml agent.personalities section
         # (matches hermes-agent CLI behavior, not filesystem SOUL.md approach)
@@ -1905,6 +1908,9 @@ def handle_get(handler, parsed) -> bool:
 
     if parsed.path == "/api/crons/status":
         return _handle_cron_status(handler, parsed)
+
+    if parsed.path == "/api/diagnostics/model-errors":
+        return _handle_diagnostics_model_errors(handler)
 
     # ── Phoenix Guardian (GET) ──
     if parsed.path == "/api/phoenix/status":
@@ -3560,6 +3566,33 @@ def _handle_list_dir(handler, parsed):
         return bad(handler, _sanitize_error(e), 404)
 
 
+def _handle_workspace_browse(handler, parsed):
+    """Browse a workspace directory without requiring an active session.
+
+    Query params:
+        path  — absolute workspace path (must be in the user's saved workspace list)
+        rel   — relative sub-path within the workspace (default: '.')
+    """
+    qs = parse_qs(parsed.query)
+    ws_path = qs.get("path", [""])[0]
+    rel = qs.get("rel", ["."])[0] or "."
+    if not ws_path:
+        return bad(handler, "path is required")
+    try:
+        from api.workspace import validate_workspace_to_add, list_dir as _list_dir
+        # Validate the path is a trusted workspace before listing
+        root = validate_workspace_to_add(ws_path)
+    except Exception as exc:
+        return bad(handler, f"Invalid workspace path: {exc}", 400)
+    try:
+        entries = _list_dir(root, rel)
+        return j(handler, {"entries": entries, "path": rel, "workspace": str(root)})
+    except FileNotFoundError as exc:
+        return bad(handler, str(exc), 404)
+    except Exception as exc:
+        return bad(handler, f"Browse failed: {exc}", 500)
+
+
 def _handle_sse_stream(handler, parsed):
     stream_id = parse_qs(parsed.query).get("stream_id", [""])[0]
     q = STREAMS.get(stream_id)
@@ -3831,14 +3864,15 @@ def _handle_phoenix_sse_stream(handler, parsed):
             try:
                 payload = q.get(timeout=30)
             except queue.Empty:
-                _sse(handler, ': keepalive\n')
+                handler.wfile.write(b": heartbeat\n\n")
+                handler.wfile.flush()
                 continue
             if payload is None:
                 break
             etype = payload.get("type", "unknown")
             edata = payload.get("data", {})
             _sse(handler, etype, edata)
-    except (BrokenPipeError, ConnectionResetError, ConnectionAbortedError):
+    except (BrokenPipeError, ConnectionResetError, ConnectionAbortedError, OSError):
         pass
     finally:
         g.unsubscribe(q)
@@ -4605,8 +4639,100 @@ def _handle_cron_status(handler, parsed):
     return j(handler, {"running": all_running})
 
 
+def _handle_diagnostics_model_errors(handler):
+    """Scan the last N session files for persisted _error messages that indicate
+    model configuration problems (model_not_found, auth_mismatch, etc.).
+    Returns {has_error, error_type, hint, count, dismissed_until} so the
+    frontend can show a sticky warning banner when the model is misconfigured.
+    Only looks at sessions modified in the last 24 hours to stay fast.
+    """
+    import json as _json
+    import time as _time
+
+    try:
+        from api.profiles import get_active_hermes_home as _home
+        _hermes_home = _home()
+    except Exception:
+        import os as _os
+        _hermes_home = _os.environ.get("HERMES_HOME") or _os.path.join(
+            _os.path.expanduser("~"), ".hermes"
+        )
+
+    sessions_dir = os.path.join(_hermes_home, "sessions")
+    if not os.path.isdir(sessions_dir):
+        return j(handler, {"has_error": False})
+
+    # Error keyword → (type, user-facing hint)
+    _ERROR_PATTERNS = [
+        ("invalid model identifier", "model_not_found",
+         "LM Studio 中没有加载指定的模型。请打开 LM Studio 确认模型已下载并运行，"
+         "或在 Hermes 设置中将模型 ID 改为 LM Studio 中实际加载的模型名称。"),
+        ("model not found", "model_not_found",
+         "配置的模型未被提供商识别。请在设置中检查模型 ID，"
+         "或运行 `hermes model` 切换到可用模型。"),
+        ("model_not_found", "model_not_found",
+         "配置的模型未被提供商识别。请在设置中检查模型 ID，"
+         "或运行 `hermes model` 切换到可用模型。"),
+        ("invalid_request_error", "model_not_found",
+         "请求格式有误，通常由模型 ID 错误引起。请确认 LM Studio 中的模型名称与 config.yaml 一致。"),
+        ("missing authentication", "auth_mismatch",
+         "提供商要求 API Key 但未配置。请在设置中添加 API Key，"
+         "或在 LM Studio → Developer → API 中关闭认证。"),
+        ("authentication", "auth_mismatch",
+         "API Key 认证失败。请检查 config.yaml 中的 api_key 配置是否正确。"),
+    ]
+
+    cutoff = time.time() - 24 * 3600  # only check last 24 hours
+    try:
+        session_files = sorted(
+            [
+                os.path.join(sessions_dir, f)
+                for f in os.listdir(sessions_dir)
+                if f.endswith(".json")
+            ],
+            key=lambda p: os.path.getmtime(p),
+            reverse=True,
+        )[:20]  # cap at 20 most recent
+    except Exception:
+        return j(handler, {"has_error": False})
+
+    error_count = 0
+    best_type = None
+    best_hint = ""
+
+    for fpath in session_files:
+        try:
+            if os.path.getmtime(fpath) < cutoff:
+                continue
+            with open(fpath, encoding="utf-8", errors="replace") as fh:
+                data = _json.load(fh)
+            messages = data.get("messages") or []
+            for msg in messages:
+                if not (isinstance(msg, dict) and msg.get("_error")):
+                    continue
+                content = (msg.get("content") or "").lower()
+                for keyword, etype, hint in _ERROR_PATTERNS:
+                    if keyword in content:
+                        error_count += 1
+                        if best_type is None:
+                            best_type = etype
+                            best_hint = hint
+                        break
+        except Exception:
+            continue
+
+    if error_count == 0 or best_type is None:
+        return j(handler, {"has_error": False})
+
+    return j(handler, {
+        "has_error": True,
+        "error_type": best_type,
+        "hint": best_hint,
+        "count": error_count,
+    })
+
+
 def _handle_cron_recent(handler, parsed):
-    """Return cron jobs that have completed since a given timestamp."""
     import datetime
 
     qs = parse_qs(parsed.query)
@@ -4683,6 +4809,7 @@ def _handle_cron_recent(handler, parsed):
                         "status": job.get("last_status", "unknown"),
                         "completed_at": ts,
                         "snippet": snippet,
+                        "has_output": md_f is not None,
                     }
                 )
 
@@ -4711,6 +4838,7 @@ def _handle_cron_recent(handler, parsed):
                             "status": "ok",
                             "completed_at": latest_ts,
                             "snippet": snippet,
+                            "has_output": True,
                         }
                     )
         except OSError:
@@ -5333,7 +5461,18 @@ def _handle_cron_deliver_to_chat(handler, body):
 
     job_dir = OUTPUT_DIR / job_id
     if not job_dir.exists():
-        return bad(handler, "no output found for this job_id", 404)
+        # Output dir missing means the cron task fired (last_run_at set in jobs.json)
+        # but the agent never wrote a result — most commonly a model error or
+        # approval denial.  Return 200 with a structured payload instead of 404
+        # so the frontend can show a meaningful message rather than retrying.
+        return j(handler, {
+            "delivered": False,
+            "reason": "no_output",
+            "message": "Cron task was triggered but produced no output. "
+                       "The agent may have failed due to a model error, "
+                       "approval denial, or gateway restart. "
+                       "Check Settings → model configuration.",
+        })
 
     # Find the most recent output file.
     latest_file = None
@@ -5389,7 +5528,12 @@ def _handle_cron_deliver_to_chat(handler, body):
     response_text = "\n".join(response_lines).strip()
 
     if not response_text:
-        return bad(handler, "no response content found in output file", 404)
+        return j(handler, {
+            "delivered": False,
+            "reason": "empty_response",
+            "message": "Cron output file exists but contains no response content. "
+                       "The agent may have been interrupted or failed to complete.",
+        })
 
     # Create a new session with the cron output as a conversation.
     # source_tag "cron" would hide it from the sidebar, so use "cron-result".

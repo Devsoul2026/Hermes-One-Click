@@ -1,6 +1,6 @@
 {
-  "version": "0.10.0",
-  "tag": "V0.10.0",
-  "filename": "HermesOneClickSetup-Devsoul-0.10.0.exe",
-  "changelog": "1. Fixed gateway restart detection on Windows.\n2. Fixed cron job result delivery to chat interface.\n3. Fixed Weixin reply after config reload.\n4. Upgraded hermes-agent to 0.13.0."
+  "version": "0.11.0",
+  "tag": "V0.11.0",
+  "filename": "HermesOneClickSetup-Devsoul-0.11.0.exe",
+  "changelog": "1. Synced Hermes Agent 0.14.0 — native Windows terminal, no more WSL.\n2. Multiple bug fixes based on community feedback.\n3. New right-side workspace file drawer for quick directory browsing.\n4. Added Maoba Skill Market shortcut in the top bar."
 }

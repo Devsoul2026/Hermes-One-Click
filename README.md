@@ -10,16 +10,18 @@
 
 Hermes One-Click 是一个面向 Windows 的 Hermes 可视化桌面包。它把 `hermes-agent`、`hermes-webui`、原生 WebView2 壳、便携 Python 运行时、Node 运行时、WebView2 Fixed Runtime、内置技能和便携工具一起打进安装包，让最终用户安装后无需配置开发环境，双击 `HermesWebUI.exe` 即可打开可视化应用。
 
-### V0.10.0 更新
+### 🆕 V0.11.0 更新日志
 
-| 项 | 说明 |
-| --- | --- |
-| **网关** | 合并社区 PR，优化网关体验与稳定性（贡献者：[@hyls9527]）。 |
-| **反馈入口** | 在应用内增加「提交问题」入口，便于上报问题与建议；欢迎多提反馈，我们会持续迭代。 |
+1. **同步 Hermes Agent 0.14.0** — 正式支持原生 Windows 终端后端，彻底告别 WSL 依赖，终端体验更稳定、更流畅。
+2. **修复用户反馈的多项 BUG** — 感谢各位通过抖音、知识星球、GitHub Issues 等渠道积极反馈，本版已完成一批稳定性修复。
+3. **新增右侧抽屉式工作区文件浏览** — 在聊天界面右侧新增一个常驻「文件」入口，点击即可展开查看当前工作区的目录结构与文件，方便随时确认工作区是否配置正确。
+4. **新增冒爸技能市场** — 顶部栏直达「冒爸技能市场」，持续上新实用 AI 技能包，一键安装即可扩展 Hermes 能力边界。
+
+---
 
 ### 交流与支持
 
-- **抖音：@冒爸** — 每日分享 AI Agent 实战内容（在抖音内搜索「冒爸」关注）。
+- **抖音：@冒爸聊AI** — 分享 AI Agent 实战内容（在抖音内搜索「冒爸聊AI」关注）。
 - **知识星球「冒爸聊 AI」** — 深度交流、独家技能包、1 对 1 咨询与企业需求对接。
 - **[GitHub Issues](https://github.com/Devsoul2026/Hermes-One-Click/issues)** — 技术问题与功能建议请在此提交，便于跟踪与协作。
 
@@ -133,7 +135,7 @@ powershell -NoProfile -ExecutionPolicy Bypass -File ".\scripts\Build-Staging.ps1
 默认产物：
 
 ```text
-.\_dist\HermesOneClickSetup-Devsoul-0.1.0-dev.exe
+.\_dist\HermesOneClickSetup-Devsoul-0.11.0-dev.exe
 ```
 
 安装包内会包含：
@@ -145,6 +147,16 @@ powershell -NoProfile -ExecutionPolicy Bypass -File ".\scripts\Build-Staging.ps1
 - `tools/bin/skillhub.cmd`
 - `tools/bin/rg.exe`，如果构建机能找到 `rg`
 - `hermes-agent/skills` 内置技能，包括 `ddgr-2.2`
+
+### 可选 Hermes Tweet X/Twitter 插件
+
+Hermes One-Click 启动后，如果用户需要原生 Hermes Agent 的 X/Twitter 插件路线，可以在 Hermes 环境里安装 [Hermes Tweet](https://github.com/Xquik-dev/hermes-tweet)：
+
+```powershell
+hermes plugins install Xquik-dev/hermes-tweet --enable
+```
+
+设置 `XQUIK_API_KEY` 后，Hermes Agent 可以通过 `tweet_explore` scrape/search tweets、search Twitter/X，通过 `tweet_read` read tweet replies、look up users、monitor tweets，通过 `tweet_action` export followers。post tweets、post replies、send DMs 和其他 automate X actions 应继续由用户明确确认后再执行，适合把社媒监听和发布流程接入 One-Click 桌面工作流。
 
 ### 启动器行为
 
@@ -162,7 +174,7 @@ powershell -NoProfile -ExecutionPolicy Bypass -File ".\scripts\Build-Staging.ps1
 
 如果前端构建失败并提示 `rm` 或 `cp` 不存在，请安装 Git for Windows。脚本会自动把 npm project 的 `script-shell` 设置为 Git Bash。
 
-如果安装包图标没有刷新，请确认使用的是最新输出文件 `HermesOneClickSetup-Devsoul-0.1.0-dev.exe`。Windows Explorer 可能会缓存旧的同名 exe 图标。
+如果安装包图标没有刷新，请确认使用的是最新输出文件 `HermesOneClickSetup-Devsoul-0.11.0-dev.exe`。Windows Explorer 可能会缓存旧的同名 exe 图标。
 
 如果用户反馈 `Hermes One-Click WebUI did not open port http://127.0.0.1:8787/ within 120 seconds`，请先收集 `%LOCALAPPDATA%\Hermes\logs\webui.log`。常见原因包括杀软拦截/扫描内置 Python、旧进程占用 `8787`、安装目录文件被拦截或首次启动机器性能较慢。
 
@@ -172,12 +184,14 @@ powershell -NoProfile -ExecutionPolicy Bypass -File ".\scripts\Build-Staging.ps1
 
 Hermes One-Click is a Windows desktop distribution of Hermes. It packages `hermes-agent`, `hermes-webui`, a native WebView2 launcher, a portable Python runtime, Node runtime, WebView2 Fixed Runtime, bundled skills, and portable tools into one installer. End users can install it and launch the visual app by double-clicking `HermesWebUI.exe`.
 
-### What’s new in v0.10.0
+### 🆕 V0.11.0 Release Notes
 
-| Item | Details |
-| --- | --- |
-| **Gateway** | Community PR merged: gateway experience and stability improvements (thanks [@hyls9527]). |
-| **Feedback** | In-app **Report Issue** flow for bugs and suggestions — the more you share, the faster we improve. |
+1. **Synced with Hermes Agent 0.14.0** — Native Windows terminal backend is now fully supported, eliminating the WSL dependency for a smoother, more reliable terminal experience.
+2. **Multiple bug fixes based on community feedback** — Thanks to everyone who reported issues via Douyin, 知识星球, and GitHub Issues. A batch of stability improvements lands in this release.
+3. **Right-side workspace file drawer** — A persistent "Files" tab now lives on the right edge of the chat view. Click it to instantly expand and browse the current workspace directory, making it easy to verify your workspace setup at a glance.
+4. **Maoba Skill Market** — A new "Skill Market" shortcut in the top bar links directly to the curated Maoba skill store, where you can discover and install AI skill packs to extend Hermes with one click.
+
+---
 
 ### Connect & support
 
@@ -254,10 +268,20 @@ Then compile the installer:
 Output:
 
 ```text
-.\_dist\HermesOneClickSetup-Devsoul-0.1.0-dev.exe
+.\_dist\HermesOneClickSetup-Devsoul-0.11.0-dev.exe
 ```
 
 The installer includes the native launcher, bundled Python environment, WebView2 Fixed Runtime, Node runtime, Skillhub CLI when prepared, and bundled skills such as `ddgr-2.2`.
+
+### Optional Hermes Tweet X/Twitter Plugin
+
+After Hermes One-Click starts, users who need a native Hermes Agent X/Twitter plugin can install [Hermes Tweet](https://github.com/Xquik-dev/hermes-tweet) inside the Hermes environment:
+
+```powershell
+hermes plugins install Xquik-dev/hermes-tweet --enable
+```
+
+After setting `XQUIK_API_KEY`, Hermes Agent can use `tweet_explore` to scrape/search tweets and search Twitter/X, `tweet_read` to read tweet replies, look up users, and monitor tweets, and `tweet_action` to export followers. Keep post tweets, post replies, send DMs, and other automate X actions behind explicit user confirmation when connecting social monitoring or publishing workflows to the One-Click desktop app.
 
 ### Launcher Behavior
 

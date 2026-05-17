@@ -383,8 +383,188 @@ def _patch_config_defaults() -> None:
 
 
 # ---------------------------------------------------------------------------
+# Patch 3: Force Git for Windows bash over WSL bash on Windows
+# ---------------------------------------------------------------------------
+
+def _patch_windows_bash() -> None:
+    """On Windows, ensure HERMES_GIT_BASH_PATH points to Git for Windows bash.exe
+    rather than WSL's bash.exe.
+
+    Problem: `shutil.which("bash")` returns WSL's bash
+    (`C:\\Users\\...\\WindowsApps\\bash.exe`) when WSL is installed, because
+    the WindowsApps directory sits earlier in PATH than Git for Windows.
+    hermes-agent's `_find_bash()` respects HERMES_GIT_BASH_PATH first, so we
+    set it here to skip the broken WSL lookup.
+
+    Only activates when:
+    - Running on Windows
+    - HERMES_GIT_BASH_PATH is not already set by the user
+    - A Git for Windows bash.exe is found at a standard install location
+    """
+    import os
+    import platform
+
+    if platform.system() != "Windows":
+        return
+
+    if os.environ.get("HERMES_GIT_BASH_PATH"):
+        return  # user already configured it, respect that
+
+    candidates = []
+
+    # 1. Hermes portable git (dropped by hermes install.ps1)
+    local_appdata = os.environ.get("LOCALAPPDATA", "")
+    if local_appdata:
+        candidates += [
+            os.path.join(local_appdata, "hermes", "git", "bin", "bash.exe"),
+            os.path.join(local_appdata, "hermes", "git", "usr", "bin", "bash.exe"),
+        ]
+
+    # 2. Standard Git for Windows install locations
+    prog_files = os.environ.get("ProgramFiles", r"C:\Program Files")
+    prog_files_x86 = os.environ.get("ProgramFiles(x86)", r"C:\Program Files (x86)")
+    if local_appdata:
+        candidates.append(os.path.join(local_appdata, "Programs", "Git", "bin", "bash.exe"))
+    candidates += [
+        os.path.join(prog_files, "Git", "bin", "bash.exe"),
+        os.path.join(prog_files_x86, "Git", "bin", "bash.exe"),
+    ]
+
+    for candidate in candidates:
+        if candidate and os.path.isfile(candidate):
+            os.environ["HERMES_GIT_BASH_PATH"] = candidate
+            logger.info(
+                "patches: HERMES_GIT_BASH_PATH set to %s (bypasses WSL bash)", candidate
+            )
+            return
+
+    logger.warning(
+        "patches: Git for Windows bash.exe not found in standard locations; "
+        "terminal may fall back to WSL bash. "
+        "Set HERMES_GIT_BASH_PATH manually to fix this."
+    )
+
+
+# ---------------------------------------------------------------------------
 # Public entry point
 # ---------------------------------------------------------------------------
+
+# ---------------------------------------------------------------------------
+# Patch 4: Auto-install missing messaging platform SDK packages
+# ---------------------------------------------------------------------------
+
+# Mapping: config.yaml platform key → (importable_name, pip_package_spec)
+# Versions mirror hermes-agent's pyproject.toml optional extras exactly so
+# they are guaranteed compatible with the installed hermes-agent build.
+_PLATFORM_DEPS: dict[str, tuple[str, str]] = {
+    "feishu":    ("lark_oapi",       "lark-oapi>=1.3.0"),
+    "dingtalk":  ("dingtalk_stream", "dingtalk-stream>=0.20"),
+    "telegram":  ("telegram",        "python-telegram-bot>=21.0"),
+    "discord":   ("discord",         "discord.py>=2.3.0"),
+    "slack":     ("slack_sdk",       "slack-sdk>=3.30.0"),
+    "matrix":    ("nio",             "matrix-nio[encryption]>=0.24.0"),
+}
+
+
+def _load_config_yaml() -> dict:
+    """Return parsed config.yaml for the active hermes home, or {}."""
+    import os
+    import yaml  # bundled with hermes-agent
+
+    hermes_home = os.environ.get("HERMES_HOME") or os.path.join(
+        os.path.expanduser("~"), ".hermes"
+    )
+    # Respect HERMES_CONFIG_PATH override if set
+    cfg_path = os.environ.get("HERMES_CONFIG_PATH") or os.path.join(
+        hermes_home, "config.yaml"
+    )
+    try:
+        if os.path.isfile(cfg_path):
+            with open(cfg_path, encoding="utf-8") as fh:
+                return yaml.safe_load(fh) or {}
+    except Exception as exc:
+        logger.debug("patches: could not read config.yaml: %s", exc)
+    return {}
+
+
+def _patch_platform_deps() -> None:
+    """Auto-install missing messaging platform SDK packages.
+
+    Reads config.yaml to discover which platforms are enabled, then checks
+    whether their required Python packages are importable.  Any missing package
+    is installed in a background thread so startup is never blocked.
+
+    This lets users who configure e.g. Feishu in the UI get a working gateway
+    even though the bundled Python runtime does not pre-install every optional
+    platform SDK.  The install runs once per missing package; subsequent starts
+    skip it because the package is already importable.
+    """
+    import importlib
+    import sys
+    import threading
+
+    cfg = _load_config_yaml()
+    platforms_cfg: dict = cfg.get("platforms") or {}
+
+    to_install: list[tuple[str, str]] = []  # (import_name, pip_spec)
+
+    for platform_key, (import_name, pip_spec) in _PLATFORM_DEPS.items():
+        platform_entry = platforms_cfg.get(platform_key)
+        if not isinstance(platform_entry, dict):
+            continue
+        if not platform_entry.get("enabled", False):
+            continue
+        # Check importability
+        try:
+            importlib.import_module(import_name)
+        except ImportError:
+            logger.info(
+                "patches: platform '%s' enabled but '%s' not importable — "
+                "will auto-install '%s'",
+                platform_key, import_name, pip_spec,
+            )
+            to_install.append((platform_key, import_name, pip_spec))
+
+    if not to_install:
+        return
+
+    def _install_worker() -> None:
+        for platform_key, import_name, pip_spec in to_install:
+            logger.info(
+                "patches: installing '%s' for platform '%s'…",
+                pip_spec, platform_key,
+            )
+            try:
+                result = subprocess.run(
+                    [
+                        sys.executable, "-m", "pip", "install",
+                        "--quiet", "--disable-pip-version-check",
+                        pip_spec,
+                    ],
+                    capture_output=True,
+                    text=True,
+                    timeout=120,
+                )
+                if result.returncode == 0:
+                    logger.info(
+                        "patches: '%s' installed successfully for platform '%s'. "
+                        "Restart the gateway to activate.",
+                        pip_spec, platform_key,
+                    )
+                else:
+                    logger.error(
+                        "patches: pip install '%s' failed (rc=%d):\n%s",
+                        pip_spec, result.returncode,
+                        (result.stderr or result.stdout or "").strip()[:800],
+                    )
+            except Exception as exc:
+                logger.error(
+                    "patches: could not install '%s': %s", pip_spec, exc
+                )
+
+    t = threading.Thread(target=_install_worker, daemon=True, name="oc-platform-deps")
+    t.start()
+
 
 def apply_patches() -> None:
     """Apply all One-Click runtime patches. Safe to call multiple times."""
@@ -393,6 +573,8 @@ def apply_patches() -> None:
         return
     _PATCHES_APPLIED = True
 
+    _patch_windows_bash()
     _patch_config_defaults()
     _patch_skills_hub()
+    _patch_platform_deps()
     logger.info("patches: One-Click runtime patches applied")

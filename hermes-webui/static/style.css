@@ -521,6 +521,47 @@
   .agent-version-modal-card{position:relative;width:min(480px,100%);max-height:min(82vh,640px);overflow:auto;background:linear-gradient(180deg,rgba(21,31,45,.98),rgba(13,20,31,.98));border:1px solid var(--accent-bg-strong);border-radius:20px;box-shadow:0 20px 64px rgba(0,0,0,.48);padding:20px 20px 16px;color:var(--text);}
   #aboutModal .agent-version-modal-card,
   #businessCoopModal .agent-version-modal-card{width:min(520px,100%);}
+
+/* ── Skill Market button — subtle flowing border ── */
+@keyframes skill-mkt-march{from{background-position:0 0}to{background-position:120px 0}}
+
+.skill-market-btn{
+  position:relative;
+  isolation:isolate;
+  overflow:visible!important;
+  color:var(--text)!important;
+  border-color:transparent!important;
+  background:transparent;
+  transition:color .2s;
+}
+/* 1.5px thin ring, slow smooth color flow */
+.skill-market-btn::before{
+  content:'';
+  position:absolute;
+  inset:-1.5px;
+  border-radius:8px;
+  background:repeating-linear-gradient(
+    90deg,
+    #e06c6c,
+    #d4a44c 20px,
+    #5aab7a 40px,
+    #4a8fcb 60px,
+    #9b72d0 80px,
+    #e06c6c 120px
+  );
+  animation:skill-mkt-march 4s linear infinite;
+  z-index:-1;
+  opacity:.8;
+}
+/* Fill interior, leaving only the thin ring */
+.skill-market-btn::after{
+  content:'';
+  position:absolute;
+  inset:.5px;
+  border-radius:7px;
+  background:var(--surface,#1e1e2e);
+  z-index:-1;
+}
   .agent-version-modal-head{display:flex;align-items:flex-start;justify-content:space-between;gap:12px;margin-bottom:12px;}
   .agent-version-modal-title{margin:0;font-size:17px;font-weight:700;letter-spacing:-.02em;color:var(--text);}
   .agent-version-modal-x{width:34px;height:34px;border:none;border-radius:10px;background:rgba(255,255,255,.05);color:var(--muted);font-size:22px;line-height:1;cursor:pointer;flex-shrink:0;}
@@ -644,6 +685,17 @@
   .onboarding-ws-browse-actions{display:flex;justify-content:flex-end;flex-wrap:wrap;gap:8px;padding:12px 18px;border-top:1px solid var(--border);}
   .reconnect-banner{display:none;background:var(--surface);border:1px solid var(--accent-bg-strong);border-radius:10px;padding:10px 16px;margin:10px auto;max-width:780px;font-size:13px;color:var(--accent-text);display:none;align-items:center;justify-content:space-between;gap:12px;}
   .reconnect-banner.visible{display:flex;}
+
+/* ── Model error warning banner ── */
+  .model-error-banner{display:none;align-items:center;gap:10px;background:rgba(230,162,60,.08);border:1px solid rgba(230,162,60,.35);border-radius:10px;padding:10px 14px;margin:8px auto;max-width:780px;font-size:12.5px;color:var(--text);box-sizing:border-box;}
+  .model-error-banner.visible{display:flex;}
+  .model-error-banner-icon{flex-shrink:0;color:rgb(200,140,40);display:flex;align-items:center;}
+  .model-error-banner-msg{flex:1;line-height:1.45;color:var(--muted);}
+  .model-error-banner-msg strong{color:var(--text);}
+  .model-error-banner-btn{flex-shrink:0;padding:4px 11px;border-radius:7px;font-size:11.5px;font-weight:600;background:rgba(230,162,60,.15);border:1px solid rgba(230,162,60,.4);color:rgb(200,140,40);cursor:pointer;transition:background .15s;}
+  .model-error-banner-btn:hover{background:rgba(230,162,60,.28);}
+  .model-error-banner-dismiss{background:transparent;border-color:var(--border);color:var(--muted);}
+  .model-error-banner-dismiss:hover{background:var(--hover-bg);}
   .reconnect-btn{padding:6px 12px;border-radius:8px;font-size:12px;font-weight:600;background:var(--accent-bg-strong);border:1px solid var(--accent-bg-strong);color:var(--accent-text);cursor:pointer;}
   .reconnect-btn:hover{background:var(--accent-bg-strong);}
   /* ── Update banner ── */
@@ -2973,6 +3025,49 @@ main.main > .main-view:not([id="mainChat"]):not([id="mainSettings"]) .main-view-
 .detail-row-label{flex:0 0 140px;color:var(--muted);font-size:12px;}
 .detail-row-value{flex:1;min-width:0;color:var(--text);word-break:break-word;}
 .detail-row-value code{background:var(--sidebar);border:1px solid var(--border);border-radius:4px;padding:1px 6px;font-size:12px;font-family:'SF Mono',ui-monospace,monospace;}
+
+/* ── Workspace file browser drawer ── */
+.ws-filebrowser-card .detail-card-title{margin-bottom:0;}
+.ws-filebrowser-toggle:hover{color:var(--text);}
+.ws-filebrowser-toggle:hover svg{stroke:var(--text);}
+.ws-fb-list{display:flex;flex-direction:column;gap:1px;}
+.ws-fb-row{display:flex;align-items:center;gap:7px;padding:5px 4px;border-radius:6px;font-size:12.5px;color:var(--text);min-width:0;}
+.ws-fb-row[onclick]{cursor:pointer;}
+.ws-fb-row[onclick]:hover{background:var(--hover-bg,rgba(128,128,128,.08));}
+.ws-fb-row span:first-child{color:var(--muted);}
+.ws-fb-row[onclick]:hover span:first-child{color:var(--accent);}
+
+/* ── Right-side workspace drawer pull-tab ── */
+.ws-pull-tab{
+  position:fixed;
+  right:0;
+  top:50%;
+  transform:translateY(-50%);
+  width:26px;
+  height:80px;
+  display:flex;
+  flex-direction:column;
+  align-items:center;
+  justify-content:center;
+  gap:6px;
+  background:var(--sidebar);
+  border:1px solid var(--border);
+  border-right:none;
+  border-radius:8px 0 0 8px;
+  cursor:pointer;
+  z-index:90;
+  padding:0;
+  color:var(--muted);
+  transition:background .15s, color .15s, box-shadow .15s;
+  box-shadow:-2px 0 8px rgba(0,0,0,.06);
+}
+.ws-pull-tab:hover{background:var(--hover-bg,rgba(128,128,128,.1));color:var(--text);box-shadow:-3px 0 12px rgba(0,0,0,.12);}
+.ws-pull-tab svg{flex-shrink:0;}
+.ws-pull-tab-label{writing-mode:vertical-rl;font-size:10px;font-weight:600;letter-spacing:.04em;text-transform:uppercase;line-height:1;}
+/* Hide pull-tab when right panel is open */
+html[data-workspace-panel="open"] .ws-pull-tab{display:none;}
+/* Hide pull-tab on mobile (has its own controls) */
+@media(max-width:900px){.ws-pull-tab{display:none!important;}}
 .detail-badge{display:inline-block;padding:2px 8px;border-radius:999px;font-size:11px;font-weight:600;border:1px solid var(--border);color:var(--muted);}
 .detail-badge.active{background:var(--accent-bg);color:var(--accent-text);border-color:var(--accent-bg-strong,var(--accent-bg));}
 .detail-badge.ok{background:rgba(100,200,100,.12);color:rgba(100,200,100,.95);border-color:rgba(100,200,100,.3);}

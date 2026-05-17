@@ -96,6 +96,13 @@ function openWorkspacePanel(mode='browse'){
     return;
   }
   _setWorkspacePanelMode(mode);
+  // Auto-populate the file tree the first time the panel is opened in browse mode
+  // so the user never has to click the manual refresh button.
+  if(mode==='browse' && S.session && typeof loadDir==='function'){
+    const tree=document.getElementById('fileTree');
+    // Only auto-load when the tree is visually empty (no children rendered yet).
+    if(tree && !tree.children.length) loadDir('.');
+  }
 }
 
 function closeWorkspacePanel(){
