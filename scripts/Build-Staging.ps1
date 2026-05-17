@@ -233,7 +233,7 @@ function Stage-PortablePythonRuntime([string]$buildPython) {
     Write-Host "  Installing: $pkg"
     & $buildPython -m pip install --quiet --upgrade --target $sitePackages $pkg
     if ($LASTEXITCODE -ne 0) {
-      Write-Warning "  Non-fatal: pip install '$pkg' failed (rc=$LASTEXITCODE) — this platform will auto-install at runtime if configured."
+      Write-Warning "  Non-fatal: pip install '$pkg' failed (rc=$LASTEXITCODE) - this platform will auto-install at runtime if configured."
     }
   }
 
@@ -390,10 +390,10 @@ Invoke-RobocopyCopy $srcWebui $dstWebui @(
   ".git", "__pycache__", ".venv", "venv", "node_modules", "tests"
 )
 
-# One-Click app version for in-app update checks — read from repo version.json.
+# One-Click app version for in-app update checks - read from repo version.json.
 $versionJsonPath = Join-Path $RepoRoot "version.json"
 if (-not (Test-Path $versionJsonPath)) {
-  throw "Missing $versionJsonPath — create it with a `"version`" field (semver string, e.g. 0.10.0)."
+  throw "Missing $versionJsonPath - create it with a `"version`" field (semver string, e.g. 0.10.0)."
 }
 $verObj = Get-Content -LiteralPath $versionJsonPath -Raw -Encoding UTF8 | ConvertFrom-Json
 $OcVersion = [string]$verObj.version
