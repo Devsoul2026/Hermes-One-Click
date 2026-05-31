@@ -3729,7 +3729,7 @@ def _handle_terminal_output(handler, parsed):
                 handler.wfile.write(b": terminal heartbeat\n\n")
                 handler.wfile.flush()
                 if term.closed.is_set() and term.output.empty():
-                    _sse(handler, "terminal_closed", {"exit_code": term.proc.poll()})
+                    _sse(handler, "terminal_closed", {"exit_code": term.exit_code()})
                     break
                 continue
             _sse(handler, event, data)
@@ -4384,7 +4384,16 @@ def _handle_live_models(handler, parsed):
                 _base_url = cfg.get("model", {}).get("base_url")
                 _api_key = cfg.get("model", {}).get("api_key")
                 if not (_api_key or "").strip():
-                    _api_key = (os.environ.get("OPENAI_API_KEY") or "").strip()
+                    from api.config import _is_nvidia_api_key, _is_nvidia_nim_base_url
+
+                    if _is_nvidia_nim_base_url(_base_url):
+                        _api_key = (os.environ.get("NVIDIA_API_KEY") or "").strip()
+                        if not _api_key:
+                            _legacy = (os.environ.get("OPENAI_API_KEY") or "").strip()
+                            if _is_nvidia_api_key(_legacy):
+                                _api_key = _legacy
+                    else:
+                        _api_key = (os.environ.get("OPENAI_API_KEY") or "").strip()
                 if _base_url and _api_key:
                     try:
                         import urllib.request

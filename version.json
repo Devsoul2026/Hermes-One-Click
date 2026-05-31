@@ -1,6 +1,6 @@
 {
-  "version": "0.11.0",
-  "tag": "V0.11.0",
-  "filename": "HermesOneClickSetup-Devsoul-0.11.0.exe",
-  "changelog": "1. Synced Hermes Agent 0.14.0 — native Windows terminal, no more WSL.\n2. Multiple bug fixes based on community feedback.\n3. New right-side workspace file drawer for quick directory browsing.\n4. Added Maoba Skill Market shortcut in the top bar."
+  "version": "0.12.0",
+  "tag": "V0.12.0",
+  "filename": "HermesOneClickSetup-Devsoul-0.12.0.exe",
+  "changelog": "1. Synced Hermes Agent 0.15.1 — native Windows terminal, no more WSL.\n2. Multiple bug fixes based on community feedback.\n3. New right-side workspace file drawer for quick directory browsing.\n4. Added Maoba Skill Market shortcut in the top bar."
 }

@@ -22,7 +22,9 @@ def test_terminal_is_opened_by_slash_command_not_permanent_composer_icon():
     assert 'id="terminalViewport"' in html
     assert 'id="terminalSurface"' in html
     assert 'static/terminal.js' in html
-    assert './static/terminal.js' in sw
+    # The service worker no longer pre-caches static assets; it self-unregisters
+    # on activate so terminal.js (and every asset) is always served fresh.
+    assert 'self.registration.unregister()' in sw
     assert "xterm@5.3.0" in html
 
 

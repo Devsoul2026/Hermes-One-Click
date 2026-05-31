@@ -952,6 +952,60 @@ def _deduplicate_model_ids(groups: list[dict]) -> None:
                 model["label"] = f"{original_id} ({provider_name})"
 
 
+_NVIDIA_NIM_HOST = "integrate.api.nvidia.com"
+
+
+def _is_nvidia_api_key(api_key: str | None) -> bool:
+    return str(api_key or "").strip().lower().startswith("nvapi-")
+
+
+def _is_nvidia_nim_base_url(base_url: str | None) -> bool:
+    url = str(base_url or "").strip()
+    if not url:
+        return False
+    try:
+        parsed = urlparse(url if "://" in url else f"https://{url}")
+        host = (parsed.netloc or parsed.path).lower()
+    except Exception:
+        return _NVIDIA_NIM_HOST in url.lower()
+    return _NVIDIA_NIM_HOST in host
+
+
+def _nvidia_key_misrouted_to_openai(err_str: str) -> bool:
+    err_lower = str(err_str or "").lower()
+    if "platform.openai.com" not in err_lower and "api.openai.com" not in err_lower:
+        return False
+    return _is_nvidia_api_key(os.environ.get("OPENAI_API_KEY"))
+
+
+def _is_provider_connection_error(err_str: str) -> bool:
+    err_lower = str(err_str or "").lower()
+    return (
+        "connection error" in err_lower
+        or "apiconnectionerror" in err_lower
+        or "remoteprotocolerror" in err_lower
+        or "disconnected without" in err_lower
+        or "remote end closed connection" in err_lower
+        or "server disconnected" in err_lower
+        or "connection reset" in err_lower
+        or "network connection" in err_lower
+        or "timed out" in err_lower
+    )
+
+
+def _nvidia_model_connection_hint(model_id: str | None, provider_id: str | None) -> str:
+    model = str(model_id or "").strip().lower()
+    provider = str(provider_id or "").strip().lower()
+    if provider != "nvidia":
+        return ""
+    if "glm" in model or model.startswith("z-ai/"):
+        return (
+            " z-ai/glm-5.1 may be unavailable or unstable on NVIDIA NIM for your account. "
+            "Try openai/gpt-oss-120b or nvidia/llama-3.3-nemotron-super-49b-v1.5 instead."
+        )
+    return ""
+
+
 def resolve_model_provider(model_id: str) -> tuple:
     """Resolve model name, provider, and base_url for AIAgent.
 
@@ -989,6 +1043,12 @@ def resolve_model_provider(model_id: str) -> tuple:
     # vLLM, TabbyAPI) actually use. See #1384.
     if isinstance(config_provider, str) and config_provider.strip().lower() == "local":
         config_provider = "custom"
+    # Legacy setups used provider=custom + NVIDIA NIM base_url (or only OPENAI_API_KEY=nvapi-...).
+    if _is_nvidia_nim_base_url(config_base_url) and str(config_provider or "").strip().lower() in {
+        "",
+        "custom",
+    }:
+        config_provider = "nvidia"
 
     model_id = (model_id or "").strip()
     if not model_id:
@@ -1055,6 +1115,9 @@ def resolve_model_provider(model_id: str) -> tuple:
         # just because the model name contains a slash (e.g. google/gemma-4-26b-a4b).
         # The user has explicitly pointed at a base_url, so trust their routing config.
         if config_base_url:
+            # NVIDIA NIM requires full namespace paths (openai/gpt-oss-120b, z-ai/glm-5.1, …).
+            if _is_nvidia_nim_base_url(config_base_url):
+                return model_id, "nvidia", config_base_url
             # Only strip the provider prefix when it's a known provider namespace
             # (e.g. "openai/gpt-5.4" → "gpt-5.4" for a custom OpenAI-compatible proxy).
             # Unknown prefixes (e.g. "zai-org/GLM-5.1" on DeepInfra) are intrinsic to
@@ -1615,6 +1678,11 @@ def get_available_models() -> dict:
         # Normalize active_provider to its canonical key
         if active_provider:
             active_provider = _resolve_provider_alias(active_provider)
+        if _is_nvidia_nim_base_url(cfg_base_url) and str(active_provider or "").strip().lower() in {
+            "",
+            "custom",
+        }:
+            active_provider = "nvidia"
 
         # 2. Read auth store (active_provider fallback + credential_pool inspection)
         auth_store = {}
@@ -1748,19 +1816,26 @@ def get_available_models() -> dict:
                 "MINIMAX_CN_API_KEY",
                 "XAI_API_KEY",
                 "MISTRAL_API_KEY",
+                "NVIDIA_API_KEY",
             ):
                 val = os.getenv(k)
                 if val:
                     all_env[k] = val
             if all_env.get("ANTHROPIC_API_KEY"):
                 detected_providers.add("anthropic")
-            if all_env.get("OPENAI_API_KEY"):
+            _openai_key = all_env.get("OPENAI_API_KEY")
+            if _openai_key and not _is_nvidia_api_key(_openai_key):
                 detected_providers.add("openai")
                 # openai-codex uses ChatGPT OAuth (not OPENAI_API_KEY) for its default endpoint.
                 # Detecting it here lets users who have both credentials configured find it in the
                 # picker without a manual config.yaml edit. Users without Codex OAuth will see
                 # picker entries but hit auth errors at inference time (#1189 known limitation).
                 detected_providers.add("openai-codex")
+            elif _openai_key and _is_nvidia_api_key(_openai_key):
+                # Legacy misplacement: nvapi- keys stored as OPENAI_API_KEY must not expose OpenAI.
+                detected_providers.add("nvidia")
+            if all_env.get("NVIDIA_API_KEY"):
+                detected_providers.add("nvidia")
             if all_env.get("OPENROUTER_API_KEY"):
                 detected_providers.add("openrouter")
             if all_env.get("GOOGLE_API_KEY"):
@@ -1834,6 +1909,9 @@ def get_available_models() -> dict:
                     except ValueError:
                         pass
 
+                if _is_nvidia_nim_base_url(base_url):
+                    provider = "nvidia"
+
                 headers = {}
                 api_key = ""
                 if isinstance(model_cfg, dict):
@@ -1848,16 +1926,29 @@ def get_available_models() -> dict:
                                 if api_key:
                                     break
                 if not api_key:
-                    api_key_vars = (
-                        "HERMES_API_KEY",
-                        "HERMES_OPENAI_API_KEY",
-                        "OPENAI_API_KEY",
-                        "LOCAL_API_KEY",
-                        "OPENROUTER_API_KEY",
-                        "API_KEY",
-                    )
+                    if provider == "nvidia":
+                        api_key_vars = (
+                            "NVIDIA_API_KEY",
+                            "OPENAI_API_KEY",
+                            "HERMES_API_KEY",
+                            "API_KEY",
+                        )
+                    else:
+                        api_key_vars = (
+                            "HERMES_API_KEY",
+                            "HERMES_OPENAI_API_KEY",
+                            "OPENAI_API_KEY",
+                            "LOCAL_API_KEY",
+                            "OPENROUTER_API_KEY",
+                            "API_KEY",
+                        )
                     for key in api_key_vars:
-                        api_key = (all_env.get(key) or os.getenv(key) or "").strip()
+                        candidate = (all_env.get(key) or os.getenv(key) or "").strip()
+                        if not candidate:
+                            continue
+                        if key == "OPENAI_API_KEY" and provider == "nvidia" and not _is_nvidia_api_key(candidate):
+                            continue
+                        api_key = candidate
                         if api_key:
                             break
                 if api_key:

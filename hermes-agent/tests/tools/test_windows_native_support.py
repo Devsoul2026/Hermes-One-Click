@@ -11,13 +11,11 @@ Windows runner.
 
 from __future__ import annotations
 
-import importlib
 import os
 import signal
-import subprocess
 import sys
 from pathlib import Path
-from unittest.mock import MagicMock, patch
+from unittest.mock import MagicMock
 
 import pytest
 
@@ -625,10 +623,21 @@ class TestKanbanWaitpidWindowsGuard:
         # Find the waitpid call and confirm it's inside a POSIX gate.
         idx = source.find("os.waitpid(-1, os.WNOHANG)")
         assert idx > 0, "waitpid call must exist"
-        # Look backwards up to 400 chars for the gate.
+        # Look backwards up to 400 chars for the gate. Accept either form:
+        #   `if os.name != "nt":` (run iff POSIX), or
+        #   `if os.name == "nt": return []` (early-return guard).
+        # Both correctly keep the waitpid loop off Windows; the early-return
+        # form is stronger because the rest of the function never runs.
         preamble = source[max(0, idx - 400):idx]
-        assert 'os.name != "nt"' in preamble or "os.name != 'nt'" in preamble, (
-            "os.waitpid(-1, os.WNOHANG) must sit behind an os.name != 'nt' guard"
+        guard_patterns = (
+            'os.name != "nt"',
+            "os.name != 'nt'",
+            'os.name == "nt"',  # early-return guard
+            "os.name == 'nt'",
+        )
+        assert any(p in preamble for p in guard_patterns), (
+            "os.waitpid(-1, os.WNOHANG) must sit behind an os.name guard "
+            f"(checked patterns: {guard_patterns})"
         )
 
 
@@ -672,14 +681,15 @@ class TestCronSchedulerBashResolution:
     """cron.scheduler must NOT hardcode /bin/bash — .sh scripts need a
     dynamically-resolved bash so Windows (Git Bash) works."""
 
-    def test_source_uses_shutil_which_for_bash(self):
+    def test_source_uses_find_bash_for_sh_scripts(self):
         root = Path(__file__).resolve().parents[2]
         source = (root / "cron" / "scheduler.py").read_text(encoding="utf-8")
-        # The old hardcoded path should be gone as the sole bash source.
-        # It may still appear as a POSIX fallback after shutil.which(), so
-        # we check for the shutil.which call near the .sh/.bash branch.
-        assert 'shutil.which("bash")' in source, (
-            "cron.scheduler must resolve bash dynamically via shutil.which"
+        sh_branch = source.split('suffix in {".sh", ".bash"}', 1)[1].split("argv = [_bash", 1)[0]
+        assert "_find_bash" in sh_branch, (
+            "cron.scheduler must resolve bash via tools.environments.local._find_bash"
+        )
+        assert 'shutil.which("bash")' not in sh_branch, (
+            "cron.scheduler must not call shutil.which('bash') directly on Windows"
         )
 
     def test_error_message_when_bash_missing(self):
@@ -689,6 +699,59 @@ class TestCronSchedulerBashResolution:
         # Windows users without Git Bash see an actionable error instead
         # of a WinError 2 traceback.
         assert "bash not found" in source.lower()
+
+
+class TestFindBashWindowsResolution:
+    """_find_bash() must prefer Git for Windows over WSL's WindowsApps stub."""
+
+    def test_prefers_program_files_git_before_wsl_path(self, monkeypatch):
+        git_bash = r"C:\Program Files\Git\bin\bash.exe"
+        wsl_bash = r"C:\Users\test\AppData\Local\Microsoft\WindowsApps\bash.exe"
+
+        monkeypatch.delenv("HERMES_GIT_BASH_PATH", raising=False)
+        monkeypatch.setenv("ProgramFiles", r"C:\Program Files")
+        monkeypatch.setenv("ProgramFiles(x86)", r"C:\Program Files (x86)")
+        monkeypatch.setenv("LOCALAPPDATA", r"C:\Users\test\AppData\Local")
+
+        def fake_isfile(path):
+            return path == git_bash
+
+        monkeypatch.setattr("tools.environments.local.os.path.isfile", fake_isfile)
+        monkeypatch.setattr("tools.environments.local.shutil.which", lambda _: wsl_bash)
+        monkeypatch.setattr("tools.environments.local._IS_WINDOWS", True)
+
+        from tools.environments.local import _find_bash
+
+        assert _find_bash() == git_bash
+
+    def test_skips_wsl_stub_when_no_git_install(self, monkeypatch):
+        wsl_bash = r"C:\Users\test\AppData\Local\Microsoft\WindowsApps\bash.exe"
+
+        monkeypatch.delenv("HERMES_GIT_BASH_PATH", raising=False)
+        monkeypatch.setenv("ProgramFiles", r"C:\Program Files")
+        monkeypatch.setenv("ProgramFiles(x86)", r"C:\Program Files (x86)")
+        monkeypatch.setenv("LOCALAPPDATA", r"C:\Users\test\AppData\Local")
+        monkeypatch.setattr("tools.environments.local.os.path.isfile", lambda _: False)
+        monkeypatch.setattr("tools.environments.local.shutil.which", lambda _: wsl_bash)
+        monkeypatch.setattr("tools.environments.local._IS_WINDOWS", True)
+
+        from tools.environments.local import _find_bash
+
+        with pytest.raises(RuntimeError, match="Git Bash not found"):
+            _find_bash()
+
+    def test_respects_hermes_git_bash_path_override(self, monkeypatch):
+        override = r"D:\custom\bash.exe"
+        monkeypatch.setenv("HERMES_GIT_BASH_PATH", override)
+        monkeypatch.setattr(
+            "tools.environments.local.os.path.isfile",
+            lambda path: path == override,
+        )
+        monkeypatch.setattr("tools.environments.local._IS_WINDOWS", True)
+
+        from tools.environments.local import _find_bash
+
+        assert _find_bash() == override
 
 
 # ---------------------------------------------------------------------------

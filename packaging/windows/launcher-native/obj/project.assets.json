@@ -140,19 +140,19 @@
     ]
   },
   "packageFolders": {
-    "C:\\Users\\Administrator\\.nuget\\packages\\": {}
+    "C:\\Users\\Aaron\\.nuget\\packages\\": {}
   },
   "project": {
     "version": "1.0.0",
     "restore": {
-      "projectUniqueName": "D:\\工作区\\Hermes One-Click\\packaging\\windows\\launcher-native\\HermesWebUI.csproj",
+      "projectUniqueName": "D:\\工作区\\zy\\Hermes One-Click\\packaging\\windows\\launcher-native\\HermesWebUI.csproj",
       "projectName": "HermesWebUI",
-      "projectPath": "D:\\工作区\\Hermes One-Click\\packaging\\windows\\launcher-native\\HermesWebUI.csproj",
-      "packagesPath": "C:\\Users\\Administrator\\.nuget\\packages\\",
-      "outputPath": "D:\\工作区\\Hermes One-Click\\packaging\\windows\\launcher-native\\obj\\",
+      "projectPath": "D:\\工作区\\zy\\Hermes One-Click\\packaging\\windows\\launcher-native\\HermesWebUI.csproj",
+      "packagesPath": "C:\\Users\\Aaron\\.nuget\\packages\\",
+      "outputPath": "D:\\工作区\\zy\\Hermes One-Click\\packaging\\windows\\launcher-native\\obj\\",
       "projectStyle": "PackageReference",
       "configFilePaths": [
-        "C:\\Users\\Administrator\\AppData\\Roaming\\NuGet\\NuGet.Config"
+        "C:\\Users\\Aaron\\AppData\\Roaming\\NuGet\\NuGet.Config"
       ],
       "originalTargetFrameworks": [
         "net8.0-windows10.0.19041.0"
@@ -200,11 +200,11 @@
         "downloadDependencies": [
           {
             "name": "Microsoft.AspNetCore.App.Runtime.win-x64",
-            "version": "[8.0.26, 8.0.26]"
+            "version": "[8.0.27, 8.0.27]"
           },
           {
             "name": "Microsoft.NETCore.App.Runtime.win-x64",
-            "version": "[8.0.26, 8.0.26]"
+            "version": "[8.0.27, 8.0.27]"
           },
           {
             "name": "Microsoft.Windows.SDK.NET.Ref",
@@ -212,7 +212,7 @@
           },
           {
             "name": "Microsoft.WindowsDesktop.App.Runtime.win-x64",
-            "version": "[8.0.26, 8.0.26]"
+            "version": "[8.0.27, 8.0.27]"
           }
         ],
         "frameworkReferences": {
@@ -226,7 +226,7 @@
             "privateAssets": "none"
           }
         },
-        "runtimeIdentifierGraphPath": "C:\\Program Files\\dotnet\\sdk\\8.0.420/PortableRuntimeIdentifierGraph.json"
+        "runtimeIdentifierGraphPath": "C:\\Program Files\\dotnet\\sdk\\8.0.421/PortableRuntimeIdentifierGraph.json"
       }
     },
     "runtimes": {

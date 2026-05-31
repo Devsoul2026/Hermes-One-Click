@@ -12,6 +12,7 @@ import time
 from pathlib import Path
 
 from tools.environments.base import BaseEnvironment, _pipe_stdin
+from hermes_cli._subprocess_compat import windows_hide_flags
 
 _IS_WINDOWS = platform.system() == "Windows"
 
@@ -74,6 +75,27 @@ def _resolve_safe_cwd(cwd: str) -> str:
 # Hermes-internal env vars that should NOT leak into terminal subprocesses.
 _HERMES_PROVIDER_ENV_FORCE_PREFIX = "_HERMES_FORCE_"
 
+# Hermes-managed AWS *inference* credentials for ``auth_type="aws_sdk"``
+# providers (Bedrock).  Scoped DELIBERATELY NARROW: this lists only the
+# Bedrock-specific bearer token, which is a Hermes inference secret exactly
+# analogous to ``OPENAI_API_KEY`` — nobody drives the ``aws``/``terraform``/
+# ``boto3`` toolchain off it, so stripping it from terminal/execute_code
+# subprocesses costs no user capability.
+#
+# The GENERAL AWS credential chain (AWS_ACCESS_KEY_ID, AWS_SECRET_ACCESS_KEY,
+# AWS_SESSION_TOKEN, AWS_PROFILE, and the config/role pointers) is INTENTIONALLY
+# left inheritable.  Per SECURITY.md §3.2 the local terminal is the user's
+# trusted operator shell; the agent having the same general AWS access the
+# user's own shell has is the intended posture, not a leak.  Hard-blocklisting
+# those vars would (a) regress every user who runs aws/terraform/cdk/boto3 in
+# the agent terminal — not just Bedrock users, since the registry is iterated
+# unconditionally — and (b) be unrecoverable, because env_passthrough.py
+# refuses to re-allow anything in this blocklist (GHSA-rhgp-j443-p4rf).  See
+# issue #32314 discussion.
+_AWS_SDK_CREDENTIAL_ENV_VARS = frozenset({
+    "AWS_BEARER_TOKEN_BEDROCK",
+})
+
 
 def _build_provider_env_blocklist() -> frozenset:
     """Derive the blocklist from provider, tool, and gateway config."""
@@ -83,6 +105,8 @@ def _build_provider_env_blocklist() -> frozenset:
         from hermes_cli.auth import PROVIDER_REGISTRY
         for pconfig in PROVIDER_REGISTRY.values():
             blocked.update(pconfig.api_key_env_vars)
+            if pconfig.auth_type == "aws_sdk":
+                blocked.update(_AWS_SDK_CREDENTIAL_ENV_VARS)
             if pconfig.base_url_env_var:
                 blocked.add(pconfig.base_url_env_var)
     except ImportError:
@@ -159,15 +183,23 @@ def _build_provider_env_blocklist() -> frozenset:
         "MODAL_TOKEN_ID",
         "MODAL_TOKEN_SECRET",
         "DAYTONA_API_KEY",
-        "VERCEL_OIDC_TOKEN",
-        "VERCEL_TOKEN",
-        "VERCEL_PROJECT_ID",
-        "VERCEL_TEAM_ID",
     })
     return frozenset(blocked)
 
 
 _HERMES_PROVIDER_ENV_BLOCKLIST = _build_provider_env_blocklist()
+
+
+def _inject_context_hermes_home(env: dict) -> None:
+    """Bridge the context-local Hermes home override into subprocess env."""
+    try:
+        from hermes_constants import get_hermes_home_override
+
+        value = get_hermes_home_override()
+        if value:
+            env["HERMES_HOME"] = value
+    except Exception:
+        pass
 
 
 def _sanitize_subprocess_env(base_env: dict | None, extra_env: dict | None = None) -> dict:
@@ -192,6 +224,8 @@ def _sanitize_subprocess_env(base_env: dict | None, extra_env: dict | None = Non
         elif key not in _HERMES_PROVIDER_ENV_BLOCKLIST or _is_passthrough(key):
             sanitized[key] = value
 
+    _inject_context_hermes_home(sanitized)
+
     # Per-profile HOME isolation for background processes (same as _make_run_env).
     from hermes_constants import get_subprocess_home
     _profile_home = get_subprocess_home()
@@ -199,6 +233,36 @@ def _sanitize_subprocess_env(base_env: dict | None, extra_env: dict | None = Non
         sanitized["HOME"] = _profile_home
 
     return sanitized
+
+
+def _is_wsl_bash_stub(path: str) -> bool:
+    """Return True if *path* is WSL's bash.exe stub rather than Git for Windows."""
+    if not path:
+        return False
+    normalized = path.replace("\\", "/").lower()
+    return "/windowsapps/" in normalized
+
+
+def _windows_git_bash_candidates() -> list[str]:
+    """Known Git-for-Windows bash.exe locations, highest priority first."""
+    local_appdata = os.environ.get("LOCALAPPDATA", "")
+    candidates: list[str] = []
+    if local_appdata:
+        hermes_git = os.path.join(local_appdata, "hermes", "git")
+        candidates.extend(
+            (
+                os.path.join(hermes_git, "bin", "bash.exe"),
+                os.path.join(hermes_git, "usr", "bin", "bash.exe"),
+                os.path.join(local_appdata, "Programs", "Git", "bin", "bash.exe"),
+            )
+        )
+    candidates.extend(
+        (
+            os.path.join(os.environ.get("ProgramFiles", r"C:\Program Files"), "Git", "bin", "bash.exe"),
+            os.path.join(os.environ.get("ProgramFiles(x86)", r"C:\Program Files (x86)"), "Git", "bin", "bash.exe"),
+        )
+    )
+    return candidates
 
 
 def _find_bash() -> str:
@@ -216,36 +280,16 @@ def _find_bash() -> str:
     if custom and os.path.isfile(custom):
         return custom
 
-    # Prefer our own portable Git install first — this way a broken or
-    # partially-uninstalled system Git can't hijack the bash lookup.  The
-    # install.ps1 installer always drops portable Git here when the user
-    # didn't already have a working system Git.
-    #
-    # Layouts (both checked so upgrades between MinGit and PortableGit
-    # installs work transparently):
-    #   PortableGit: %LOCALAPPDATA%\hermes\git\bin\bash.exe   (primary)
-    #   MinGit:      %LOCALAPPDATA%\hermes\git\usr\bin\bash.exe (legacy/32-bit fallback)
-    _local_appdata = os.environ.get("LOCALAPPDATA", "")
-    _hermes_portable_git = os.path.join(_local_appdata, "hermes", "git") if _local_appdata else ""
-    if _hermes_portable_git:
-        for candidate in (
-            os.path.join(_hermes_portable_git, "bin", "bash.exe"),        # PortableGit (primary)
-            os.path.join(_hermes_portable_git, "usr", "bin", "bash.exe"), # MinGit fallback
-        ):
-            if os.path.isfile(candidate):
-                return candidate
-
-    found = shutil.which("bash")
-    if found:
-        return found
-
-    for candidate in (
-        os.path.join(os.environ.get("ProgramFiles", r"C:\Program Files"), "Git", "bin", "bash.exe"),
-        os.path.join(os.environ.get("ProgramFiles(x86)", r"C:\Program Files (x86)"), "Git", "bin", "bash.exe"),
-        os.path.join(_local_appdata, "Programs", "Git", "bin", "bash.exe"),
-    ):
+    # Scan known Git-for-Windows install paths before PATH lookup.  On many
+    # Windows hosts WSL's bash.exe (under .../WindowsApps/) appears earlier in
+    # PATH than Git for Windows, which would send shell commands into WSL.
+    for candidate in _windows_git_bash_candidates():
         if candidate and os.path.isfile(candidate):
             return candidate
+
+    found = shutil.which("bash")
+    if found and not _is_wsl_bash_stub(found):
+        return found
 
     raise RuntimeError(
         "Git Bash not found. Hermes Agent requires Git for Windows on Windows.\n"
@@ -292,6 +336,8 @@ def _make_run_env(env: dict) -> dict:
     if not _IS_WINDOWS and "/usr/bin" not in existing_path.split(":"):
         run_env["PATH"] = f"{existing_path}:{_SANE_PATH}" if existing_path else _SANE_PATH
 
+    _inject_context_hermes_home(run_env)
+
     # Per-profile HOME isolation: redirect system tool configs (git, ssh, gh,
     # npm …) into {HERMES_HOME}/home/ when that directory exists.  Only the
     # subprocess sees the override — the Python process keeps the real HOME.
@@ -303,7 +349,7 @@ def _make_run_env(env: dict) -> dict:
     # Inject ContextVar-based session vars into subprocess env.
     # ContextVars don't propagate to child processes, so we bridge them here.
     try:
-        from gateway.session_context import get_session_env, _UNSET, _VAR_MAP
+        from gateway.session_context import _UNSET, _VAR_MAP
         for var_name, var in _VAR_MAP.items():
             value = var.get()
             if value is not _UNSET and value:
@@ -503,6 +549,8 @@ class LocalEnvironment(BaseEnvironment):
 
         _popen_cwd = self.cwd
 
+        _popen_kwargs = {"creationflags": windows_hide_flags()} if _IS_WINDOWS else {}
+
         proc = subprocess.Popen(
             args,
             text=True,
@@ -513,8 +561,8 @@ class LocalEnvironment(BaseEnvironment):
             stderr=subprocess.STDOUT,
             stdin=subprocess.PIPE if stdin_data is not None else subprocess.DEVNULL,
             preexec_fn=None if _IS_WINDOWS else os.setsid,
-            creationflags=subprocess.CREATE_NO_WINDOW if _IS_WINDOWS else 0,
             cwd=_popen_cwd,
+            **_popen_kwargs,
         )
         if not _IS_WINDOWS:
             try:

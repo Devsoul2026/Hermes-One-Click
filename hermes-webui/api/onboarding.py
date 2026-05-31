@@ -16,6 +16,8 @@ from api.config import (
     _PROVIDER_DISPLAY,
     _PROVIDER_MODELS,
     _get_config_path,
+    _is_nvidia_api_key,
+    _is_nvidia_nim_base_url,
     get_available_models,
     get_config,
     load_settings,
@@ -626,6 +628,11 @@ def apply_onboarding_setup(body: dict) -> dict:
     api_key = str(body.get("api_key") or "").strip()
     base_url = _normalize_base_url(str(body.get("base_url") or ""))
 
+    if _is_nvidia_nim_base_url(base_url):
+        provider = "nvidia"
+        if not base_url:
+            base_url = _normalize_base_url(_SUPPORTED_PROVIDER_SETUPS["nvidia"]["default_base_url"])
+
     if provider not in _SUPPORTED_PROVIDER_SETUPS:
         # Unsupported providers (openai-codex, copilot, nous, etc.) are already
         # configured via the CLI. Just mark onboarding as complete and let the
@@ -683,7 +690,12 @@ def apply_onboarding_setup(body: dict) -> dict:
     _save_yaml_config(config_path, cfg)
 
     if api_key:
-        _write_env_file(env_path, {provider_meta["env_var"]: api_key})
+        env_updates: dict[str, str | None] = {provider_meta["env_var"]: api_key}
+        if provider == "nvidia" or _is_nvidia_api_key(api_key):
+            prior_openai = env_values.get("OPENAI_API_KEY", "")
+            if _is_nvidia_api_key(prior_openai) or _is_nvidia_api_key(api_key):
+                env_updates["OPENAI_API_KEY"] = None
+        _write_env_file(env_path, env_updates)
 
     # Reload the hermes_cli provider/config cache so the next streaming call
     # picks up the new key without requiring a server restart.
@@ -698,6 +710,8 @@ def apply_onboarding_setup(body: dict) -> dict:
     # wrote to disk but the profile isolation tracking hasn't seen it yet).
     if api_key:
         os.environ[provider_meta["env_var"]] = api_key
+        if provider == "nvidia" or _is_nvidia_api_key(api_key):
+            os.environ.pop("OPENAI_API_KEY", None)
 
     try:
         # hermes_cli caches load_config() results; bust the cache so the next

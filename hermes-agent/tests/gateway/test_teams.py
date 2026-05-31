@@ -1,13 +1,10 @@
 """Tests for the Microsoft Teams platform adapter plugin."""
 
-import asyncio
 import json
-import os
 import sys
 import types
-from pathlib import Path
 from types import SimpleNamespace
-from unittest.mock import AsyncMock, MagicMock, patch
+from unittest.mock import AsyncMock, MagicMock
 
 import httpx
 import pytest
@@ -763,7 +760,7 @@ def _install_fake_aiohttp(monkeypatch, session):
     """Replace ``aiohttp`` in ``sys.modules`` so ``import aiohttp as _aiohttp``
     inside ``_standalone_send`` picks up our fake."""
     fake_aiohttp = types.SimpleNamespace(
-        ClientSession=lambda timeout=None: session,
+        ClientSession=lambda timeout=None, **kwargs: session,
         ClientTimeout=lambda total=None: None,
     )
     monkeypatch.setitem(sys.modules, "aiohttp", fake_aiohttp)

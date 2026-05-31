@@ -4,7 +4,9 @@
   Assemble _staging/Hermes for Windows installer: app copies, Vite web_dist, portable Python, launcher, optional Node portable.
 
 .PARAMETER PipExtras
-  Passed to pip install -e "hermes-agent[PipExtras]". Default "web". Use "all,web" for full agent (slow, may fail on some hosts).
+  Passed to pip install -e "hermes-agent[PipExtras]". Default "web,pty". The
+  "pty" extra pulls pywinpty so the WebUI embedded terminal works natively on
+  Windows (ConPTY). Use "all,web" for full agent (slow, may fail on some hosts).
 
 .PARAMETER SkipWebBuild
   Skip npm ci + build in staged hermes-agent/web (use existing hermes_cli/web_dist if present).
@@ -35,7 +37,7 @@
 param(
   [string]$RepoRoot = (Split-Path -Parent $PSScriptRoot),
   [string]$StagingRoot = "",
-  [string]$PipExtras = "web",
+  [string]$PipExtras = "web,pty",
   [switch]$SkipWebBuild,
   [switch]$SkipVenv,
   [switch]$DownloadNode,

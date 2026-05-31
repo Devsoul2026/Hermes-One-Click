@@ -28,6 +28,9 @@ from api.config import (
     SESSION_AGENT_LOCKS, SESSION_AGENT_LOCKS_LOCK,
     resolve_model_provider,
     model_with_provider_context,
+    _nvidia_key_misrouted_to_openai,
+    _is_provider_connection_error,
+    _nvidia_model_connection_hint,
 )
 from api.helpers import redact_session_data
 from api.metering import meter
@@ -1639,6 +1642,40 @@ def _run_agent_streaming(
             _token_sent = False  # tracks whether any streamed tokens were sent
             _reasoning_text = ''  # accumulates reasoning/thinking trace for persistence
             _live_tool_calls = []  # tool progress fallback when final messages omit tool IDs
+            _stream_watchdog_stop = threading.Event()
+            resolved_model = None
+            resolved_provider = None
+
+            def _stream_watchdog():
+                if _stream_watchdog_stop.wait(45):
+                    return
+                if not _token_sent:
+                    put('warning', {
+                        'message': 'Still waiting for the model provider…',
+                        'type': 'slow_response',
+                    })
+                while not _stream_watchdog_stop.wait(45):
+                    if _token_sent:
+                        return
+                    put('warning', {
+                        'message': 'Provider is still not responding. This may be a network or model availability issue.',
+                        'type': 'slow_response',
+                    })
+
+            _stream_watchdog_thread = threading.Thread(
+                target=_stream_watchdog,
+                daemon=True,
+                name=f"watchdog-{session_id[:8]}",
+            )
+
+            def on_status(event_type, message=None):
+                text = str(message if message is not None else event_type or '').strip()
+                if not text:
+                    return
+                put('warning', {
+                    'message': text,
+                    'type': str(event_type or 'status'),
+                })
 
             # Throttle: emit metering events at most every 100 ms so the TPS label
             # feels live during fast token streams without flooding the SSE channel.
@@ -1907,6 +1944,8 @@ def _run_agent_streaming(
                     )
                 ),
             )
+            if 'status_callback' in _agent_params:
+                _agent_kwargs['status_callback'] = on_status
             # reasoning_config has been an AIAgent param for several releases,
             # but guard defensively to avoid TypeError on an older agent build.
             if 'reasoning_config' in _agent_params and _reasoning_config is not None:
@@ -1963,6 +2002,8 @@ def _run_agent_streaming(
                         agent.reasoning_callback = _agent_kwargs.get('reasoning_callback')
                     if hasattr(agent, 'clarify_callback'):
                         agent.clarify_callback = _agent_kwargs.get('clarify_callback')
+                    if hasattr(agent, 'status_callback'):
+                        agent.status_callback = _agent_kwargs.get('status_callback')
                     if _session_db is not None:
                         # Close any previously held SessionDB connection before
                         # replacing it. Without this, each streaming request creates
@@ -2100,13 +2141,17 @@ def _run_agent_streaming(
             _ckpt_thread.start()
 
             user_message = _build_native_multimodal_message(workspace_ctx, msg_text, attachments, workspace)
-            result = agent.run_conversation(
-                user_message=user_message,
-                system_message=workspace_system_msg,
-                conversation_history=_sanitize_messages_for_api(_previous_context_messages),
-                task_id=session_id,
-                persist_user_message=msg_text,
-            )
+            _stream_watchdog_thread.start()
+            try:
+                result = agent.run_conversation(
+                    user_message=user_message,
+                    system_message=workspace_system_msg,
+                    conversation_history=_sanitize_messages_for_api(_previous_context_messages),
+                    task_id=session_id,
+                    persist_user_message=msg_text,
+                )
+            finally:
+                _stream_watchdog_stop.set()
             # ── Ephemeral mode (/btw): deliver answer, skip persistence, cleanup ──
             if ephemeral:
                 _answer = ''
@@ -2172,8 +2217,16 @@ def _run_agent_streaming(
                 )
                 # _token_sent tracks whether on_token() was called (any streamed text)
                 if not _assistant_added and not _token_sent:
-                    _last_err = getattr(agent, '_last_error', None) or result.get('error') or ''
-                    _err_str = str(_last_err) if _last_err else ''
+                    _last_err = ''
+                    for _candidate in (
+                        result.get('error'),
+                        result.get('final_response'),
+                        getattr(agent, '_last_error', None),
+                    ):
+                        if _candidate:
+                            _last_err = str(_candidate)
+                            break
+                    _err_str = _last_err
                     _err_lower = _err_str.lower()
                     _is_quota = (
                         'insufficient credit' in _err_lower
@@ -2211,6 +2264,24 @@ def _run_agent_streaming(
                             '① In LM Studio → Developer → API → turn Authentication OFF (recommended for local use), then retry. '
                             '② Or copy your LM Studio API key and add it to Hermes config: '
                             'open ~/.hermes/config.yaml → providers → lmstudio → api_key: <your-key>.'
+                        )
+                    elif _nvidia_key_misrouted_to_openai(_err_str):
+                        _err_label = 'NVIDIA key sent to OpenAI'
+                        _err_type = 'auth_mismatch'
+                        _err_hint = (
+                            'Your NVIDIA API key (nvapi-...) is stored as OPENAI_API_KEY, so requests '
+                            'were sent to api.openai.com instead of NVIDIA NIM. '
+                            'Fix: Settings → Provider → NVIDIA NIM, or edit ~/.hermes/.env — '
+                            'set NVIDIA_API_KEY=nvapi-... and remove OPENAI_API_KEY. '
+                            'Ensure config.yaml has model.provider: nvidia.'
+                        )
+                    elif _is_provider_connection_error(_err_str):
+                        _err_label = 'Connection failed'
+                        _err_type = 'no_response'
+                        _err_hint = (
+                            'Could not reach the model provider.'
+                            + _nvidia_model_connection_hint(resolved_model, resolved_provider)
+                            + ' Check your network/proxy, then retry or switch models.'
                         )
                     elif _is_auth:
                         _err_label = 'Authentication failed'
@@ -2549,6 +2620,7 @@ def _run_agent_streaming(
             or 'lmstudio.ai/docs/developer/core/authentication' in _exc_lower
             or ('lm studio' in _exc_lower and 'token' in _exc_lower)
         )
+        _exc_is_connection = _is_provider_connection_error(err_str)
         _exc_is_not_found = (
             '404' in err_str
             or 'not found' in _exc_lower
@@ -2577,6 +2649,22 @@ def _run_agent_streaming(
                 '① In LM Studio → Developer → API → turn Authentication OFF (recommended for local use), then retry. '
                 '② Or copy your LM Studio API key and add it to Hermes config: '
                 'open ~/.hermes/config.yaml → providers → lmstudio → api_key: <your-key>.',
+            )
+        elif _nvidia_key_misrouted_to_openai(err_str):
+            _exc_label, _exc_type, _exc_hint = (
+                'NVIDIA key sent to OpenAI', 'auth_mismatch',
+                'Your NVIDIA API key (nvapi-...) is stored as OPENAI_API_KEY, so requests '
+                'were sent to api.openai.com instead of NVIDIA NIM. '
+                'Fix: Settings → Provider → NVIDIA NIM, or edit ~/.hermes/.env — '
+                'set NVIDIA_API_KEY=nvapi-... and remove OPENAI_API_KEY. '
+                'Ensure config.yaml has model.provider: nvidia.',
+            )
+        elif _exc_is_connection:
+            _exc_label, _exc_type, _exc_hint = (
+                'Connection failed', 'no_response',
+                'Could not reach the model provider.'
+                + _nvidia_model_connection_hint(resolved_model, resolved_provider)
+                + ' Check your network/proxy, then retry or switch models.',
             )
         elif _exc_is_auth:
             _exc_label, _exc_type, _exc_hint = (

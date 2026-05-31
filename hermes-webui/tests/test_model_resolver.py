@@ -506,3 +506,73 @@ def test_custom_endpoint_slash_model_routes_to_custom_not_openrouter():
     assert model_or == 'google/gemma-4-26b-a4b', (
         "Model name should be preserved for openrouter, got '{}'.".format(model_or)
     )
+
+
+# -- NVIDIA NIM routing ------------------------------------------------------
+
+
+def test_nvidia_custom_provider_keeps_full_model_path():
+    """custom + NVIDIA NIM base_url must preserve openai/ and z-ai/ prefixes."""
+    model, provider, base_url = _resolve_with_config(
+        'openai/gpt-oss-120b',
+        provider='custom',
+        base_url='https://integrate.api.nvidia.com/v1',
+    )
+    assert model == 'openai/gpt-oss-120b'
+    assert provider == 'nvidia'
+    assert base_url == 'https://integrate.api.nvidia.com/v1'
+
+
+def test_nvidia_provider_keeps_zai_model_path():
+    model, provider, base_url = _resolve_with_config(
+        'z-ai/glm-5.1',
+        provider='nvidia',
+        base_url='https://integrate.api.nvidia.com/v1',
+    )
+    assert model == 'z-ai/glm-5.1'
+    assert provider == 'nvidia'
+
+
+def test_nvidia_model_connection_hint_for_glm():
+    hint = config._nvidia_model_connection_hint('z-ai/glm-5.1', 'nvidia')
+    assert 'gpt-oss-120b' in hint
+    assert config._nvidia_model_connection_hint('openai/gpt-oss-120b', 'nvidia') == ''
+
+
+def test_provider_connection_error_detection():
+    assert config._is_provider_connection_error('Connection error.')
+    assert config._is_provider_connection_error('Remote end closed connection without response')
+    assert not config._is_provider_connection_error('HTTP 401 Unauthorized')
+
+
+def test_nvapi_openai_key_does_not_expose_openai_provider(monkeypatch):
+    """OPENAI_API_KEY=nvapi-... must not add an OpenAI group to the picker."""
+    import sys
+    import types
+
+    monkeypatch.delenv('NVIDIA_API_KEY', raising=False)
+    monkeypatch.setenv('OPENAI_API_KEY', 'nvapi-test-key')
+
+    fake_mod = types.ModuleType('hermes_cli.models')
+    fake_mod.list_available_providers = lambda: []
+    fake_auth = types.ModuleType('hermes_cli.auth')
+    fake_auth.get_auth_status = lambda pid: {'key_source': 'env'}
+    monkeypatch.setitem(sys.modules, 'hermes_cli.models', fake_mod)
+    monkeypatch.setitem(sys.modules, 'hermes_cli.auth', fake_auth)
+
+    old_cfg = dict(config.cfg)
+    config.cfg['model'] = {
+        'provider': 'nvidia',
+        'default': 'z-ai/glm-5.1',
+        'base_url': 'https://integrate.api.nvidia.com/v1',
+    }
+    try:
+        config._cfg_mtime = 0.0
+        result = config.get_available_models()
+    finally:
+        config.cfg.clear()
+        config.cfg.update(old_cfg)
+
+    group_names = [g['provider'] for g in result['groups']]
+    assert 'OpenAI' not in group_names, f"OpenAI group leaked for nvapi key: {group_names}"
+    assert result['active_provider'] == 'nvidia'

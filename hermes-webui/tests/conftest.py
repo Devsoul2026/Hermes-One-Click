@@ -99,13 +99,20 @@ def _discover_agent_dir() -> pathlib.Path:
 def _discover_python(agent_dir) -> str:
     if os.getenv('HERMES_WEBUI_PYTHON'):
         return os.getenv('HERMES_WEBUI_PYTHON')
-    if agent_dir:
-        venv_py = agent_dir / 'venv' / 'bin' / 'python'
-        if venv_py.exists():
-            return str(venv_py)
-    local_venv = REPO_ROOT / '.venv' / 'bin' / 'python'
-    if local_venv.exists():
-        return str(local_venv)
+    # Probe both POSIX (bin/python) and Windows (Scripts/python.exe) venv layouts,
+    # mirroring api/config._discover_python so tests run on Windows too.
+    rel_python = [
+        ('venv', 'bin', 'python'),
+        ('.venv', 'bin', 'python'),
+        ('venv', 'Scripts', 'python.exe'),
+        ('.venv', 'Scripts', 'python.exe'),
+    ]
+    roots = [agent_dir, REPO_ROOT] if agent_dir else [REPO_ROOT]
+    for root in roots:
+        for parts in rel_python:
+            cand = root.joinpath(*parts)
+            if cand.exists():
+                return str(cand)
     return shutil.which('python3') or shutil.which('python') or 'python3'
 
 HERMES_AGENT = _discover_agent_dir()
