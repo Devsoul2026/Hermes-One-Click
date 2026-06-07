@@ -21,18 +21,6 @@ Hermes One-Click 是一个面向 Windows 的 Hermes 可视化桌面包。它把 
 | **技能市场** | 顶部栏增加「冒爸技能市场」快捷入口。 |
 | **问题修复** | 根据社区反馈修复多项已知问题。 |
 
-### 交流与支持
-
-- **抖音：@冒爸聊AI** — 分享 AI Agent 实战内容（在抖音内搜索「冒爸聊AI」关注）。
-- **知识星球「冒爸聊 AI」** — 深度交流、独家技能包、1 对 1 咨询与企业需求对接。
-- **[GitHub Issues](https://github.com/Devsoul2026/Hermes-One-Click/issues)** — 技术问题与功能建议请在此提交，便于跟踪与协作。
-
-### AI 大航海
-
-> 我们不只是做工具，我们在建生态。无论你是个人开发者、企业决策者，还是想进入 AI 行业的普通人——这里有你上船的位置。
-
-Hermes One-Click 基于 **MIT** 协议开源，可免费使用。若本项目对你有帮助，欢迎在 GitHub 上点亮一颗 **Star**，这对我们是很大的鼓励。
-
 ---
 
 ### 仓库结构
@@ -196,18 +184,6 @@ Hermes One-Click is a Windows desktop distribution of Hermes. It packages `herme
 | **Workspace files** | New right-side workspace file drawer for quick directory browsing. |
 | **Skill market** | Added a Maoba Skill Market shortcut in the top bar. |
 | **Bug fixes** | Multiple fixes based on community feedback. |
-
-### Connect & support
-
-- **Douyin: @冒爸** — daily AI Agent tips and walkthroughs (search “冒爸” in the Douyin app).
-- **知识星球「冒爸聊 AI」** — deeper discussions, exclusive skill packs, 1:1 consulting, and enterprise introductions.
-- **[GitHub Issues](https://github.com/Devsoul2026/Hermes-One-Click/issues)** — technical questions and feature requests belong here for tracking and collaboration.
-
-### Beyond the tool
-
-> We are not only shipping a tool — we are building an ecosystem. Whether you are an indie developer, a business decision-maker, or someone stepping into AI — there is a place for you on board.
-
-Hermes One-Click is open source under the **MIT** license and free to use. If you find it useful, please leave us a **Star** on GitHub — it means a lot.
 
 ---
 
