@@ -1,0 +1,5 @@
+name: evolink-provider
+kind: model-provider
+version: 1.0.0
+description: EvoLink OpenAI-compatible model gateway
+author: EvoLink
